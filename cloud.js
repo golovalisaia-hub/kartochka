@@ -2,6 +2,9 @@
   'use strict';
 
   const SESSION_KEY = 'kartochka.supabase-session.v1';
+  const CARDS_KEY = 'kartochka.cards.v1';
+  const CLOUD_USER_KEY = 'kartochka.cloud-user.v1';
+  const USER_CACHE_PREFIX = 'kartochka.user-cache.v1.';
   const config = window.KARTOCHKA_CONFIG || {};
   const baseUrl = String(config.supabaseUrl || '').replace(/\/+$/, '');
   const anonKey = String(config.supabaseAnonKey || '').trim();
@@ -23,8 +26,49 @@
     if (value?.access_token) {
       if (!value.expires_at && value.expires_in) value.expires_at = Math.floor(Date.now() / 1000) + Number(value.expires_in);
       localStorage.setItem(SESSION_KEY, JSON.stringify(value));
+    } else localStorage.removeItem(SESSION_KEY);
+  }
+
+  function readCards(key = CARDS_KEY) {
+    try {
+      const value = JSON.parse(localStorage.getItem(key) || '[]');
+      return Array.isArray(value) ? value : [];
+    } catch (_) {
+      return [];
     }
-    else localStorage.removeItem(SESSION_KEY);
+  }
+
+  function cacheKey(userId) {
+    return `${USER_CACHE_PREFIX}${userId || ''}`;
+  }
+
+  function cacheCards(userId, cards = readCards()) {
+    if (!userId || !Array.isArray(cards)) return;
+    try { localStorage.setItem(cacheKey(userId), JSON.stringify(cards)); } catch (_) {}
+  }
+
+  function cachedCards(userId) {
+    return userId ? readCards(cacheKey(userId)) : [];
+  }
+
+  function mergeById(first, second) {
+    const merged = new Map();
+    for (const card of first || []) merged.set(card.id, card);
+    for (const card of second || []) {
+      const previous = merged.get(card.id);
+      if (!previous || Number(card.lastUsed || 0) >= Number(previous.lastUsed || 0)) merged.set(card.id, card);
+    }
+    return [...merged.values()];
+  }
+
+  function markSyncIssue() {
+    setTimeout(() => {
+      const status = document.querySelector('#syncStatus');
+      const label = status?.querySelector('span');
+      if (!status || !label) return;
+      status.classList.remove('online', 'syncing');
+      label.textContent = 'Есть изменения, которые ещё не сохранены в облаке';
+    }, 0);
   }
 
   async function request(path, options = {}, authenticated = false) {
@@ -46,7 +90,9 @@
         const body = await response.json();
         message = body.msg || body.message || body.error_description || body.error || '';
       } catch (_) {}
-      throw new Error(message || `Ошибка облака (${response.status})`);
+      const error = new Error(message || `Ошибка облака (${response.status})`);
+      error.status = response.status;
+      throw error;
     }
     if (response.status === 204 || response.headers.get('content-length') === '0') return null;
     const text = await response.text();
@@ -58,10 +104,7 @@
     if (!session) return null;
     const expiresAt = Number(session.expires_at || 0);
     if (!expiresAt || expiresAt * 1000 > Date.now() + 60_000) return session;
-    if (!session.refresh_token) {
-      storeSession(null);
-      return null;
-    }
+    if (!session.refresh_token) return session;
     try {
       const refreshed = await request('/auth/v1/token?grant_type=refresh_token', {
         method: 'POST',
@@ -69,7 +112,15 @@
       });
       storeSession(refreshed);
       return refreshed;
-    } catch (_) {
+    } catch (error) {
+      // A temporary network/server failure must never erase the local wallet.
+      if (!error?.status || error.status >= 500 || error.status === 429) {
+        markSyncIssue();
+        return session;
+      }
+      // A definitively invalid refresh token signs the account out, but first preserves local cards.
+      cacheCards(session.user?.id);
+      try { localStorage.setItem(CARDS_KEY, '[]'); } catch (_) {}
       storeSession(null);
       return null;
     }
@@ -97,6 +148,7 @@
 
   async function signOut() {
     const session = readSession();
+    if (session?.user?.id) cacheCards(session.user.id);
     if (session?.access_token) {
       try {
         await request('/auth/v1/logout', {
@@ -139,10 +191,18 @@
   }
 
   async function listCards() {
-    const rows = await request('/rest/v1/cards?select=*&order=last_used.desc', {
-      method: 'GET'
-    }, true);
-    return (rows || []).map(fromRow);
+    const session = await validSession();
+    const userId = session?.user?.id;
+    if (!userId) throw new Error('Сессия истекла. Войдите снова.');
+    try {
+      const rows = await request('/rest/v1/cards?select=*&order=last_used.desc', { method: 'GET' }, true);
+      const remote = (rows || []).map(fromRow);
+      // Per-account cache contains cards that may not have reached the server before a disconnect/sign-out.
+      return mergeById(remote, cachedCards(userId));
+    } catch (error) {
+      markSyncIssue();
+      throw error;
+    }
   }
 
   async function upsertCards(cards) {
@@ -150,18 +210,34 @@
     const session = await validSession();
     const userId = session?.user?.id;
     if (!userId) throw new Error('Сессия истекла. Войдите снова.');
-    await request('/rest/v1/cards?on_conflict=user_id,id', {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify(cards.map(card => toRow(card, userId)))
-    }, true);
+    try {
+      await request('/rest/v1/cards?on_conflict=user_id,id', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify(cards.map(card => toRow(card, userId)))
+      }, true);
+      cacheCards(userId, cards);
+    } catch (error) {
+      cacheCards(userId, cards);
+      markSyncIssue();
+      throw error;
+    }
   }
 
   async function deleteCard(id) {
-    await request(`/rest/v1/cards?id=eq.${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      headers: { Prefer: 'return=minimal' }
-    }, true);
+    const session = await validSession();
+    const userId = session?.user?.id;
+    if (!userId) throw new Error('Сессия истекла. Войдите снова.');
+    try {
+      await request(`/rest/v1/cards?id=eq.${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { Prefer: 'return=minimal' }
+      }, true);
+      cacheCards(userId, cachedCards(userId).filter(card => card.id !== id));
+    } catch (error) {
+      markSyncIssue();
+      throw error;
+    }
   }
 
   window.KartochkaCloud = {
