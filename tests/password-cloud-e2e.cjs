@@ -84,6 +84,8 @@ async function login(page, email) {
   await page.locator('#verifyCodeButton').click();
   await page.waitForFunction(() => Boolean(window.KartochkaCloud?.user?.()?.id));
   await page.waitForFunction(() => !document.querySelector('#syncStatus')?.classList.contains('syncing'));
+  await page.locator('[data-close="auth"]').click();
+  await page.locator('#authOverlay').waitFor({ state:'hidden' });
 }
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -104,6 +106,8 @@ async function login(page, email) {
   await a.page.locator('#verifyCodeButton').click();
   await a.page.waitForFunction(() => window.KartochkaCloud?.user?.()?.id === 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
   assert.ok(requests.some(r => r.path === '/auth/v1/verify' && r.body.token === '123456' && r.body.type === 'email'));
+  await a.page.locator('[data-close="auth"]').click();
+  await a.page.locator('#authOverlay').waitFor({ state:'hidden' });
   console.log('PASS email -> one-time code -> signed-in session, no password field');
 
   await a.page.locator('#addCardHome').click();
