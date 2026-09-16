@@ -1,10 +1,11 @@
-const CACHE = 'kartochka-v4';
+const CACHE = 'kartochka-v5';
 const APP_SHELL = [
   './',
   './index.html',
   './styles.css',
   './app.js',
   './backup.js',
+  './card-quality.js',
   './cloud.js',
   './config.js',
   './scanner-enhance.js',
