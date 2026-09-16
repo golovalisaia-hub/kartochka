@@ -33,3 +33,12 @@ window.KARTOCHKA_CONFIG = {
     });
   }, true);
 })();
+
+/* Load the independent backup interface. It waits for DOMContentLoaded and
+   cannot mutate the wallet unless the user selects and confirms a file. */
+(() => {
+  const script = document.createElement('script');
+  script.src = './backup.js';
+  script.async = false;
+  document.head.append(script);
+})();
