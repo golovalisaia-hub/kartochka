@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b0b0c">
+  <meta name="description" content="Карточка — все скидочные карты в одном портмоне">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Карточка">
+  <title>Карточка</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <svg class="svg-sprite" aria-hidden="true">
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 7.8A2.8 2.8 0 0 1 6.8 5h10.7A2.5 2.5 0 0 1 20 7.5V19H6.8A2.8 2.8 0 0 1 4 16.2V7.8Z"/><path d="M4.4 8h13.1A2.5 2.5 0 0 1 20 10.5V13h-4.2a2 2 0 1 0 0 4H20M15.8 15h.01"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="2"/><rect x="14" y="4" width="6" height="6" rx="2"/><rect x="4" y="14" width="6" height="6" rx="2"/><rect x="14" y="14" width="6" height="6" rx="2"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="m12 3 1.25 4.1a5.7 5.7 0 0 0 3.65 3.65L21 12l-4.1 1.25a5.7 5.7 0 0 0-3.65 3.65L12 21l-1.25-4.1a5.7 5.7 0 0 0-3.65-3.65L3 12l4.1-1.25a5.7 5.7 0 0 0 3.65-3.65L12 3Z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H9l1.2-2h3.6L15 6h2.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-8Z"/><circle cx="12" cy="12.5" r="3.5"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.5"/><path d="m5 17 4.5-4.5 3 3 2-2L19 18"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M7 10h.01M11 10h.01M15 10h.01M18 10h.01M6 14h.01M10 14h.01M14 14h.01M18 14h.01M8 17h8"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M9 7V4h6v3M8 10v7M12 10v7M16 10v7M6.5 7l1 14h9l1-14"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">К</span><span>Карточка</span></div>
+      <button class="icon-button" id="quickAdd" aria-label="Добавить карту"><svg><use href="#i-plus"/></svg></button>
+    </header>
+
+    <main>
+      <section class="view active" id="walletView" aria-labelledby="walletTitle">
+        <div class="view-heading">
+          <div><p class="eyebrow">Моё портмоне</p><h1 id="walletTitle">Всегда под рукой</h1></div>
+          <button class="text-button" id="openAllTop">Все карты <span id="cardCountTop">0</span></button>
+        </div>
+
+        <div class="wallet-stage" id="walletStage">
+          <div class="wallet-empty" id="walletEmpty" hidden>
+            <div class="empty-mark"><svg><use href="#i-plus"/></svg></div>
+            <strong>Добавьте первую карту</strong>
+            <span>Сфотографируйте карту или выберите изображение</span>
+          </div>
+          <div class="recent-stack" id="recentStack" aria-label="Недавно использованные карты"></div>
+          <button class="wallet-body" id="walletBody" aria-expanded="false" aria-label="Приоткрыть портмоне">
+            <span class="wallet-stitch wallet-stitch-top"></span>
+            <span class="wallet-logo">К</span>
+            <span class="wallet-name">КАРТОЧКА</span>
+            <span class="wallet-pocket"><i></i></span>
+            <span class="wallet-stitch wallet-stitch-bottom"></span>
+          </button>
+        </div>
+
+        <div class="wallet-actions" id="walletActions">
+          <button class="primary-button" id="addCardHome"><svg><use href="#i-plus"/></svg>Добавить карту</button>
+          <button class="secondary-button" id="showAllHome"><svg><use href="#i-grid"/></svg><span id="showAllLabel">Все карты</span></button>
+        </div>
+        <p class="privacy-note">Карты хранятся только на этом устройстве</p>
+      </section>
+
+      <section class="view" id="allView" aria-labelledby="allTitle">
+        <div class="subpage-head">
+          <button class="icon-button back-button" data-go="wallet" aria-label="Назад"><svg><use href="#i-back"/></svg></button>
+          <div><p class="eyebrow">Коллекция</p><h1 id="allTitle">Все карты</h1></div>
+          <button class="icon-button" id="addCardAll" aria-label="Добавить карту"><svg><use href="#i-plus"/></svg></button>
+        </div>
+        <label class="search-field"><svg><use href="#i-search"/></svg><input id="cardSearch" type="search" placeholder="Найти магазин" autocomplete="off"></label>
+        <div class="cards-grid" id="cardsGrid"></div>
+        <div class="no-results" id="noResults" hidden>Ничего не найдено</div>
+      </section>
+
+      <section class="view" id="designView" aria-labelledby="designTitle">
+        <div class="subpage-head">
+          <button class="icon-button back-button" data-go="wallet" aria-label="Назад"><svg><use href="#i-back"/></svg></button>
+          <div><p class="eyebrow">Внешний вид</p><h1 id="designTitle">Дизайн портмоне</h1></div>
+          <span class="head-spacer"></span>
+        </div>
+        <div class="theme-preview"><div class="mini-wallet"><span>К</span><small>КАРТОЧКА</small></div></div>
+        <div class="theme-list" id="themeList"></div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Навигация">
+      <button class="nav-item active" data-view="wallet"><svg><use href="#i-wallet"/></svg><span>Портмоне</span></button>
+      <button class="nav-item" data-view="all"><svg><use href="#i-grid"/></svg><span>Все карты</span></button>
+      <button class="nav-item" data-view="design"><svg><use href="#i-sparkle"/></svg><span>Дизайн</span></button>
+    </nav>
+  </div>
+
+  <div class="overlay" id="addOverlay" hidden>
+    <section class="sheet add-sheet" role="dialog" aria-modal="true" aria-labelledby="addTitle">
+      <div class="sheet-grabber"></div>
+      <div class="sheet-head"><div><p class="eyebrow">Новая карта</p><h2 id="addTitle">Как добавить?</h2></div><button class="icon-button close-sheet" data-close="add" aria-label="Закрыть"><svg><use href="#i-x"/></svg></button></div>
+      <div class="method-list">
+        <button class="method-button" id="scanCamera"><span class="method-icon coral"><svg><use href="#i-camera"/></svg></span><span><strong>Сканировать камерой</strong><small>Наведите камеру на код карты</small></span><b>›</b></button>
+        <button class="method-button" id="scanGallery"><span class="method-icon blue"><svg><use href="#i-image"/></svg></span><span><strong>Выбрать из галереи</strong><small>Подойдёт фото или скриншот</small></span><b>›</b></button>
+      </div>
+      <button class="manual-fallback-button" id="openManual"><svg><use href="#i-keyboard"/></svg>Не получилось? Ввести вручную</button>
+      <p class="sheet-hint">Если код постоянно меняется в приложении магазина, сохранить его как обычную карту не получится.</p>
+      <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+      <input id="galleryInput" type="file" accept="image/*" hidden>
+    </section>
+  </div>
+
+  <div class="overlay scanner-overlay" id="scannerOverlay" hidden>
+    <section class="scanner-sheet" role="dialog" aria-modal="true" aria-labelledby="scannerTitle">
+      <div class="scanner-topbar">
+        <button class="scanner-close" id="closeScanner" aria-label="Закрыть сканер"><svg><use href="#i-x"/></svg></button>
+        <div><p class="eyebrow">Сканирование</p><h2 id="scannerTitle">Наведите на код</h2></div>
+        <span class="scanner-spacer"></span>
+      </div>
+      <div class="camera-frame">
+        <video id="scannerVideo" playsinline muted></video>
+        <div class="scan-window"><i></i><i></i><i></i><i></i><span></span></div>
+      </div>
+      <p class="scanner-status" id="scannerStatus">Запрашиваем доступ к камере…</p>
+      <button class="secondary-button scanner-fallback" id="scannerFallback"><svg><use href="#i-camera"/></svg>Сделать фотографию</button>
+      <button class="scanner-manual" id="scannerManual">Ввести данные вручную</button>
+    </section>
+  </div>
+
+  <div class="overlay" id="manualOverlay" hidden>
+    <section class="sheet manual-sheet" role="dialog" aria-modal="true" aria-labelledby="manualTitle">
+      <div class="sheet-grabber"></div>
+      <div class="sheet-head"><button class="icon-button" id="backToMethods" aria-label="Назад"><svg><use href="#i-back"/></svg></button><h2 id="manualTitle">Данные карты</h2><button class="icon-button close-sheet" data-close="manual" aria-label="Закрыть"><svg><use href="#i-x"/></svg></button></div>
+      <form id="cardForm" autocomplete="off">
+        <p class="recognition-result" id="recognitionResult" hidden></p>
+        <div class="store-presets" id="storePresets" aria-label="Популярные магазины"></div>
+        <label class="form-field"><span>Магазин</span><input id="storeName" name="loyalty_store" autocomplete="off" enterkeyhint="next" data-form-type="other" placeholder="Например, Перекрёсток" maxlength="28" required></label>
+        <label class="form-field"><span>Номер или содержимое кода</span><input id="cardNumber" name="loyalty_code" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" data-form-type="other" data-1p-ignore data-lpignore="true" placeholder="Введите значение под кодом" maxlength="120" required></label>
+        <label class="form-field"><span>Тип кода</span><select id="cardFormat" name="format"><option value="auto">Определить автоматически</option><option value="code_128">Code 128</option><option value="ean_13">EAN-13</option><option value="qr_code">QR-код</option></select></label>
+        <div class="palette-label">Цвет карты</div>
+        <div class="palette" id="cardPalette"></div>
+        <button class="primary-button wide" type="submit">Сохранить карту</button>
+      </form>
+    </section>
+  </div>
+
+  <div class="overlay light-overlay" id="cardOverlay" hidden>
+    <section class="code-sheet" role="dialog" aria-modal="true" aria-labelledby="detailStore">
+      <div class="code-topbar"><button class="round-light" id="closeCard" aria-label="Закрыть"><svg><use href="#i-x"/></svg></button><span>Покажите код кассиру</span><button class="round-light danger" id="deleteCard" aria-label="Удалить карту"><svg><use href="#i-trash"/></svg></button></div>
+      <div class="detail-card" id="detailCard"><span class="detail-logo" id="detailLogo">К</span><div><h2 id="detailStore">Карта</h2><p id="detailDigits">•••• 0000</p></div></div>
+      <div class="barcode-panel" id="barcodePanel"><div id="barcodeMount"></div><p id="barcodeNumber"></p></div>
+      <p class="code-tip" id="awakeStatus">Для быстрого сканирования экран остаётся светлым</p>
+    </section>
+  </div>
+
+  <div class="overlay" id="deleteConfirmOverlay" hidden>
+    <section class="sheet confirm-sheet" role="alertdialog" aria-modal="true" aria-labelledby="deleteConfirmTitle" aria-describedby="deleteConfirmText">
+      <div class="confirm-icon"><svg><use href="#i-trash"/></svg></div>
+      <h2 id="deleteConfirmTitle">Удалить карту?</h2>
+      <p id="deleteConfirmText">Карта будет удалена с этого устройства.</p>
+      <div class="confirm-actions">
+        <button class="secondary-button" id="cancelDelete" type="button">Отмена</button>
+        <button class="danger-button" id="confirmDelete" type="button">Удалить</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="vendor/zxing-browser.min.js" defer></script>
+  <script src="app.js" defer></script>
+</body>
+</html>
