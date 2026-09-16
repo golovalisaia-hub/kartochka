@@ -28,5 +28,5 @@ jobs:
         run: node tests/identity-e2e.cjs
       - name: Full retailer recognition and photo tests
         run: node tests/brand-e2e.cjs
-      - name: Email/password and two-profile sync regression
+      - name: Email-code, account isolation and offline sync regression
         run: node tests/password-cloud-e2e.cjs
