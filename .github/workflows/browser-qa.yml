@@ -1,7 +1,7 @@
 name: Card wallet browser QA
 on:
   push:
-    branches: [main, fix/code-integrity-and-editing]
+    branches: [main, feature/full-brand-recognition]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -26,3 +26,5 @@ jobs:
         run: node tests/quality-e2e.cjs
       - name: Same-store QR identity regression
         run: node tests/identity-e2e.cjs
+      - name: Full retailer recognition and photo tests
+        run: node tests/brand-e2e.cjs

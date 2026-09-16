@@ -1,4 +1,4 @@
-/* Kartochka photo scanner: real symbology, local OCR, and user-confirmed brand memory. */
+/* Local card-photo recognition. Store names are suggestions; code symbology is read from pixels, never inferred from a shop. */
 (() => {
   'use strict';
   const $ = selector => document.querySelector(selector);
@@ -13,8 +13,8 @@
     ['ВкусВилл', ['вкусвилл', 'vkusvill', 'vkusvill.ru']],
     ['Дикси', ['дикси', 'dixy', 'dixy.ru']],
     ['Ашан', ['ашан', 'auchan']],
-    ['Окей', ['окей', 'o key', 'okmarket', 'okmarket.ru']],
-    ['Метро', ['metro cash', 'metro c&c', 'metro-cc']],
+    ['О’КЕЙ', ['окей', 'o key', 'okmarket', 'okmarket.ru']],
+    ['METRO', ['метро', 'metro cash', 'metro c&c', 'metro-cc']],
     ['Мираторг', ['мираторг', 'miratorg']],
     ['Спортмастер', ['спортмастер', 'sportmaster']],
     ['Детский мир', ['детский мир', 'detmir', 'detmir.ru']],
@@ -27,9 +27,21 @@
     ['Лемана ПРО', ['лемана про', 'lemana pro', 'lemanapro']],
     ['Глобус', ['глобус', 'globus.ru']],
     ['Верный', ['верный', 'verno-info']],
-    ['Читай-город', ['читай город', 'читай-город', 'chitai-gorod']]
+    ['Читай-город', ['читай город', 'читай-город', 'chitai-gorod']],
+    ['DNS', ['днс', 'dns shop']],
+    ['М.Видео', ['мвидео', 'mvideo']],
+    ['Эльдорадо', ['eldorado']],
+    ['Fix Price', ['фикс прайс', 'фикс-прайс', 'fixprice']],
+    ['Четыре Лапы', ['4 лапы', '4lapy']],
+    ['O’STIN', ['остин', 'ostin']],
+    ['Gloria Jeans', ['глория джинс', 'gloriajeans']],
+    ['Яндекс Лавка', ['yandex lavka', 'yandexlavka']],
+    ['Самокат', ['samokat']],
+    ['Чижик', ['chizhik']],
+    ['SPAR', ['спар']],
+    ['Золотое Яблоко', ['gold apple']]
   ];
-  const FORMATS = new Set(['qr_code','ean_13','code_128']);
+  const FORMATS = new Set(['qr_code', 'ean_13', 'code_128']);
   const formatNames = { qr_code:'QR-код', ean_13:'EAN-13', ean_8:'EAN-8', code_128:'Code 128', code_39:'Code 39', code_93:'Code 93', upc_a:'UPC-A', upc_e:'UPC-E', itf:'ITF', codabar:'Codabar', data_matrix:'Data Matrix', pdf_417:'PDF417', aztec:'Aztec', code_128_image:'Code 128 (оригинал)' };
   let activeScan = null;
   let busy = false;
@@ -39,20 +51,35 @@
     const toast = $('#toast');
     if (toast) { toast.textContent = text; toast.classList.add('show'); }
   }
-  function normalize(s) {
-    return String(s || '').toLocaleLowerCase('ru').replace(/ё/g, 'е').replace(/[^\p{L}\p{N}.]+/gu, ' ').trim();
+  function normalize(value) {
+    return String(value || '').normalize('NFKC').toLocaleLowerCase('ru').replace(/ё/g, 'е').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
   }
   function findBrand(text) {
-    const normalized = ` ${normalize(text)} `;
-    const aliases = catalog.flatMap(([name, terms]) => terms.map(term => ({ name, term: normalize(term) })));
-    aliases.sort((a, b) => b.term.length - a.term.length);
-    return aliases.find(({ term }) => term.length > 2 && normalized.includes(` ${term} `))?.name || null;
+    const input = ` ${normalize(text)} `;
+    if (input.trim().length < 3) return null;
+    // The directory is loaded after this script, but is available when the user imports a photo.
+    const directory = window.KartochkaDirectory?.stores || [];
+    const aliases = [];
+    for (const name of directory) aliases.push({ name, term: normalize(name) });
+    for (const [name, terms] of catalog) {
+      const official = directory.find(candidate => normalize(candidate) === normalize(name)) || name;
+      for (const term of terms) aliases.push({ name: official, term: normalize(term) });
+    }
+    const hits = aliases.filter(({ term }) => term.length > 2 && input.includes(` ${term} `))
+      .sort((a, b) => b.term.length - a.term.length);
+    if (!hits.length) return null;
+    // A photo with several unrelated retailer names must not silently pick one.
+    const longest = hits[0].term.length;
+    const top = new Set(hits.filter(hit => hit.term.length === longest).map(hit => hit.name));
+    return top.size === 1 ? hits[0].name : null;
   }
   function getCards() {
-    try { const value = JSON.parse(localStorage.getItem(CARDS_KEY)); return Array.isArray(value) ? value : []; } catch { return []; }
+    try { const value = JSON.parse(localStorage.getItem(CARDS_KEY)); return Array.isArray(value) ? value : []; }
+    catch { return []; }
   }
   function getMemory() {
-    try { const value = JSON.parse(localStorage.getItem(MEMORY_KEY)); return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; } catch { return {}; }
+    try { const value = JSON.parse(localStorage.getItem(MEMORY_KEY)); return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; }
+    catch { return {}; }
   }
   async function fingerprint(value) {
     if (!crypto.subtle || !value) return null;
@@ -144,7 +171,6 @@
   }
   async function recognizeCode(image) {
     const original = scaledCanvas(image);
-    // Try original pixels first, then contrast and rotation for difficult photos.
     for (const canvas of [original, boostContrast(original), rotateCanvas(original), rotateCanvas(boostContrast(original))]) {
       const decoded = await tryDecode(canvas);
       if (decoded?.value) return decoded;
@@ -193,7 +219,6 @@
     finally { await worker.terminate(); }
   }
   function openReview({ code, format, brand, image, warning }) {
-    // Reuse existing form and its validation, and let the user confirm before saving.
     $('#openManual').click();
     $('#manualTitle').textContent = 'Проверьте распознанную карту';
     $('#cardNumber').value = code;
@@ -286,7 +311,6 @@
     const number = $('#cardNumber').value.trim();
     const store = $('#storeName').value.trim();
     const scan = activeScan;
-    // Run after the original synchronous save and only when a card was actually added.
     queueMicrotask(async () => {
       const cards = getCards();
       if (cards.length <= before || !number || !store) return;
