@@ -11,6 +11,7 @@
   <title>Карточка</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -28,12 +29,17 @@
     <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M9 7V4h6v3M8 10v7M12 10v7M16 10v7M6.5 7l1 14h9l1-14"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.2 8.6 4.8 4.8 0 0 0 7 18Z"/><path d="m9 14 3-3 3 3M12 11v7"/></symbol>
   </svg>
 
   <div class="app-shell">
     <header class="topbar">
       <div class="brand"><span class="brand-mark">К</span><span>Карточка</span></div>
-      <button class="icon-button" id="quickAdd" aria-label="Добавить карту"><svg><use href="#i-plus"/></svg></button>
+      <div class="topbar-actions">
+        <button class="icon-button account-button" id="accountButton" aria-label="Войти и включить синхронизацию"><svg><use href="#i-user"/></svg><span id="accountDot"></span></button>
+        <button class="icon-button" id="quickAdd" aria-label="Добавить карту"><svg><use href="#i-plus"/></svg></button>
+      </div>
     </header>
 
     <main>
@@ -63,7 +69,7 @@
           <button class="primary-button" id="addCardHome"><svg><use href="#i-plus"/></svg>Добавить карту</button>
           <button class="secondary-button" id="showAllHome"><svg><use href="#i-grid"/></svg><span id="showAllLabel">Все карты</span></button>
         </div>
-        <p class="privacy-note">Карты хранятся только на этом устройстве</p>
+        <button class="privacy-note sync-note" id="syncStatus" type="button"><svg><use href="#i-cloud"/></svg><span>Карты хранятся только на этом устройстве</span></button>
       </section>
 
       <section class="view" id="allView" aria-labelledby="allTitle">
@@ -165,8 +171,49 @@
     </section>
   </div>
 
+  <div class="overlay" id="authOverlay" hidden>
+    <section class="sheet auth-sheet" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <div class="sheet-grabber"></div>
+      <div class="sheet-head">
+        <div><p class="eyebrow">Облачное сохранение</p><h2 id="authTitle">Вход в Карточку</h2></div>
+        <button class="icon-button close-sheet" data-close="auth" aria-label="Закрыть"><svg><use href="#i-x"/></svg></button>
+      </div>
+
+      <div id="authUnavailable" class="auth-message" hidden>
+        <strong>Облако ещё не настроено</strong>
+        <p>Укажите адрес проекта и публичный ключ Supabase в файле <code>config.js</code>.</p>
+      </div>
+
+      <form id="emailForm" class="auth-form">
+        <p class="auth-copy">Введите почту. Мы отправим одноразовый шестизначный код — пароль не нужен.</p>
+        <label class="form-field"><span>Электронная почта</span><input id="authEmail" type="email" autocomplete="email" inputmode="email" placeholder="name@example.com" required></label>
+        <button class="primary-button wide" id="sendCodeButton" type="submit">Получить код</button>
+      </form>
+
+      <form id="codeForm" class="auth-form" hidden>
+        <p class="auth-copy">Код отправлен на <strong id="sentEmail"></strong>. Он действует ограниченное время.</p>
+        <label class="form-field"><span>Код из письма</span><input id="authCode" class="otp-input" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,8}" maxlength="8" placeholder="000000" required></label>
+        <button class="primary-button wide" id="verifyCodeButton" type="submit">Войти</button>
+        <button class="text-button auth-link" id="changeEmail" type="button">Изменить почту</button>
+      </form>
+
+      <div id="accountPanel" class="account-panel" hidden>
+        <div class="account-cloud"><svg><use href="#i-cloud"/></svg></div>
+        <strong id="accountEmail"></strong>
+        <p id="accountSyncText">Карты синхронизированы с облаком</p>
+        <button class="secondary-button wide" id="syncNow" type="button">Синхронизировать сейчас</button>
+        <button class="text-button auth-link danger-text" id="signOut" type="button">Выйти из аккаунта</button>
+      </div>
+
+      <p class="auth-error" id="authError" role="alert" hidden></p>
+    </section>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="vendor/zxing-browser.min.js" defer></script>
+  <script src="config.js" defer></script>
+  <script src="cloud.js" defer></script>
+  <script src="scanner-enhance.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>

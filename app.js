@@ -4,6 +4,9 @@
   const STORAGE_KEY = 'kartochka.cards.v1';
   const THEME_KEY = 'kartochka.wallet-theme.v1';
   const DEMO_CLEANUP_KEY = 'kartochka.demo-cleanup.v1';
+  const CLOUD_USER_KEY = 'kartochka.cloud-user.v1';
+  const CLOUD_IDS_PREFIX = 'kartochka.cloud-ids.v1.';
+  const CLOUD_DELETIONS_PREFIX = 'kartochka.cloud-deletions.v1.';
   const LEGACY_DEMO_NUMBERS = new Set(['2200000715238','2900635618427','7800037421956','4600001853120']);
   const palettes = [
     { id: 'berry', name: 'Ягодный', a: '#ef4444', b: '#8b1538', text: '#fff' },
@@ -41,7 +44,11 @@
     toastTimer: null,
     scannerControls: null,
     scannerBusy: false,
-    wakeLock: null
+    wakeLock: null,
+    user: null,
+    cloudTimer: null,
+    cloudBusy: false,
+    pendingEmail: ''
   };
 
   function loadCards() {
@@ -63,8 +70,222 @@
     }
   }
 
-  function saveCards() {
+  function saveCards(sync = true) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.cards));
+    if (sync) queueCloudSync();
+  }
+
+  function cloudAvailable() {
+    return Boolean(window.KartochkaCloud?.configured?.());
+  }
+
+  function cloudErrorMessage(error) {
+    const value = String(error?.message || error || '');
+    if (/invalid login credentials|token has expired|session/i.test(value)) return 'Сессия истекла. Войдите снова.';
+    if (/rate limit|over_email_send_rate_limit/i.test(value)) return 'Слишком много запросов. Подождите немного и попробуйте снова.';
+    if (/email.*invalid|invalid.*email/i.test(value)) return 'Проверьте адрес электронной почты.';
+    if (/token.*invalid|otp.*expired|expired.*token/i.test(value)) return 'Код неверный или уже истёк.';
+    if (/failed to fetch|network|load failed/i.test(value)) return 'Нет связи с облаком. Проверьте интернет.';
+    return value || 'Не удалось выполнить запрос.';
+  }
+
+  function setAuthError(message = '') {
+    const element = $('#authError');
+    element.textContent = message;
+    element.hidden = !message;
+  }
+
+  function setButtonBusy(button, busy, busyText) {
+    if (!button) return;
+    if (!button.dataset.label) button.dataset.label = button.textContent;
+    button.disabled = busy;
+    button.textContent = busy ? busyText : button.dataset.label;
+  }
+
+  function updateCloudUI() {
+    const configured = cloudAvailable();
+    const signedIn = Boolean(state.user);
+    $('#accountButton').classList.toggle('signed-in', signedIn);
+    $('#accountButton').setAttribute('aria-label', signedIn ? 'Открыть настройки синхронизации' : 'Войти и включить синхронизацию');
+    const status = $('#syncStatus');
+    status.classList.toggle('online', signedIn);
+    status.classList.toggle('syncing', state.cloudBusy);
+    status.querySelector('span').textContent = state.cloudBusy
+      ? 'Синхронизация…'
+      : signedIn
+        ? `Сохранено в облаке · ${state.user.email || 'аккаунт'}`
+        : configured
+          ? 'Войдите, чтобы сохранять карты в облаке'
+          : 'Карты хранятся только на этом устройстве';
+  }
+
+  function showAuthStep(step) {
+    const configured = cloudAvailable();
+    $('#authUnavailable').hidden = configured;
+    $('#emailForm').hidden = !configured || step !== 'email';
+    $('#codeForm').hidden = !configured || step !== 'code';
+    $('#accountPanel').hidden = !configured || step !== 'account';
+    if (step === 'account' && state.user) {
+      $('#accountEmail').textContent = state.user.email || 'Аккаунт';
+      $('#accountSyncText').textContent = state.cloudBusy ? 'Синхронизация…' : 'Карты синхронизированы с облаком';
+    }
+  }
+
+  function openAccount() {
+    setAuthError();
+    showAuthStep(state.user ? 'account' : 'email');
+    showOverlay('#authOverlay');
+    if (!state.user && cloudAvailable()) setTimeout(() => $('#authEmail').focus(), 200);
+  }
+
+  function queueCloudSync() {
+    if (!state.user || !cloudAvailable()) return;
+    clearTimeout(state.cloudTimer);
+    state.cloudTimer = setTimeout(() => syncWithCloud({ quiet: true }), 450);
+  }
+
+  function readStringList(key) {
+    try {
+      const value = JSON.parse(localStorage.getItem(key));
+      return Array.isArray(value) ? value.filter(item => typeof item === 'string') : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function cloudIdsKey(userId = state.user?.id) {
+    return `${CLOUD_IDS_PREFIX}${userId || ''}`;
+  }
+
+  function cloudDeletionsKey(userId = state.user?.id) {
+    return `${CLOUD_DELETIONS_PREFIX}${userId || ''}`;
+  }
+
+  function rememberCloudDeletion(id) {
+    if (!state.user) return;
+    const key = cloudDeletionsKey();
+    const ids = new Set(readStringList(key));
+    ids.add(id);
+    localStorage.setItem(key, JSON.stringify([...ids]));
+  }
+
+  function mergeCards(localCards, cloudCards) {
+    const merged = new Map();
+    localCards.forEach(card => merged.set(card.id, card));
+    cloudCards.forEach(card => {
+      const local = merged.get(card.id);
+      if (!local || Number(card.lastUsed || 0) >= Number(local.lastUsed || 0)) merged.set(card.id, card);
+    });
+    return [...merged.values()];
+  }
+
+  async function syncWithCloud({ quiet = false, initial = false } = {}) {
+    if (!state.user || !cloudAvailable() || state.cloudBusy) return;
+    state.cloudBusy = true;
+    updateCloudUI();
+    showAuthStep('account');
+    try {
+      const previousUser = localStorage.getItem(CLOUD_USER_KEY);
+      const firstSyncForUser = initial || previousUser !== state.user.id;
+      const deletionKey = cloudDeletionsKey();
+      const pendingDeletions = readStringList(deletionKey);
+      for (const id of pendingDeletions) await window.KartochkaCloud.deleteCard(id);
+      if (pendingDeletions.length) localStorage.removeItem(deletionKey);
+
+      const remoteCards = await window.KartochkaCloud.listCards();
+      const remoteIds = new Set(remoteCards.map(card => card.id));
+      const previouslySynced = new Set(readStringList(cloudIdsKey()));
+      const localCards = firstSyncForUser
+        ? state.cards
+        : state.cards.filter(card => remoteIds.has(card.id) || !previouslySynced.has(card.id));
+      state.cards = mergeCards(localCards, remoteCards);
+      saveCards(false);
+      await window.KartochkaCloud.upsertCards(state.cards);
+      localStorage.setItem(CLOUD_USER_KEY, state.user.id);
+      localStorage.setItem(cloudIdsKey(), JSON.stringify(state.cards.map(card => card.id)));
+      renderStack();
+      renderGrid($('#cardSearch').value);
+      if (!quiet) toast('Карты синхронизированы');
+    } catch (error) {
+      if (!quiet) toast(cloudErrorMessage(error));
+    } finally {
+      state.cloudBusy = false;
+      updateCloudUI();
+      showAuthStep(state.user ? 'account' : 'email');
+    }
+  }
+
+  async function initializeCloud() {
+    updateCloudUI();
+    if (!cloudAvailable()) return;
+    try {
+      const session = await window.KartochkaCloud.validSession();
+      state.user = session?.user || null;
+      if (!state.user && localStorage.getItem(CLOUD_USER_KEY)) {
+        state.cards = [];
+        saveCards(false);
+        localStorage.removeItem(CLOUD_USER_KEY);
+        renderStack();
+        renderGrid();
+      }
+      updateCloudUI();
+      if (state.user) await syncWithCloud({ quiet: true });
+    } catch (_) {
+      state.user = null;
+      updateCloudUI();
+    }
+  }
+
+  async function submitEmail(event) {
+    event.preventDefault();
+    setAuthError();
+    const email = $('#authEmail').value.trim().toLocaleLowerCase('en');
+    const button = $('#sendCodeButton');
+    setButtonBusy(button, true, 'Отправляем…');
+    try {
+      await window.KartochkaCloud.sendCode(email);
+      state.pendingEmail = email;
+      $('#sentEmail').textContent = email;
+      showAuthStep('code');
+      $('#authCode').value = '';
+      setTimeout(() => $('#authCode').focus(), 100);
+    } catch (error) {
+      setAuthError(cloudErrorMessage(error));
+    } finally {
+      setButtonBusy(button, false);
+    }
+  }
+
+  async function submitCode(event) {
+    event.preventDefault();
+    setAuthError();
+    const token = $('#authCode').value.replace(/\D/g, '');
+    const button = $('#verifyCodeButton');
+    setButtonBusy(button, true, 'Проверяем…');
+    try {
+      state.user = await window.KartochkaCloud.verifyCode(state.pendingEmail, token);
+      updateCloudUI();
+      showAuthStep('account');
+      await syncWithCloud({ initial: true });
+      toast('Вход выполнен');
+    } catch (error) {
+      setAuthError(cloudErrorMessage(error));
+    } finally {
+      setButtonBusy(button, false);
+    }
+  }
+
+  async function signOut() {
+    await window.KartochkaCloud.signOut();
+    state.user = null;
+    state.cards = [];
+    saveCards(false);
+    localStorage.removeItem(CLOUD_USER_KEY);
+    renderStack();
+    renderGrid();
+    updateCloudUI();
+    showAuthStep('email');
+    toast('Вы вышли из аккаунта');
   }
 
   function initials(name) {
@@ -600,7 +821,9 @@
   function deleteActiveCard() {
     const card = state.cards.find(item => item.id === state.activeCardId);
     if (!card) return;
-    $('#deleteConfirmText').textContent = `Карта «${card.store}» будет удалена с этого устройства.`;
+    $('#deleteConfirmText').textContent = state.user
+      ? `Карта «${card.store}» будет удалена с этого устройства и из облака.`
+      : `Карта «${card.store}» будет удалена с этого устройства.`;
     showOverlay('#deleteConfirmOverlay');
   }
 
@@ -619,6 +842,18 @@
       return;
     }
     state.cards = remainingCards;
+    if (state.user && cloudAvailable()) {
+      rememberCloudDeletion(card.id);
+      window.KartochkaCloud.deleteCard(card.id).then(() => {
+        const key = cloudDeletionsKey();
+        const ids = readStringList(key).filter(id => id !== card.id);
+        if (ids.length) localStorage.setItem(key, JSON.stringify(ids));
+        else localStorage.removeItem(key);
+        localStorage.setItem(cloudIdsKey(), JSON.stringify(remainingCards.map(item => item.id)));
+      }).catch(() => {
+        toast('Карта удалена локально, но облако пока недоступно');
+      });
+    }
     releaseScreenWakeLock();
     hideOverlay('#deleteConfirmOverlay');
     hideOverlay('#cardOverlay');
@@ -743,6 +978,14 @@
     $('#deleteCard').addEventListener('click', deleteActiveCard);
     $('#cancelDelete').addEventListener('click', () => hideOverlay('#deleteConfirmOverlay'));
     $('#confirmDelete').addEventListener('click', confirmDeleteActiveCard);
+    $('#accountButton').addEventListener('click', openAccount);
+    $('#syncStatus').addEventListener('click', openAccount);
+    $$('[data-close="auth"]').forEach(item => item.addEventListener('click', () => hideOverlay('#authOverlay')));
+    $('#emailForm').addEventListener('submit', submitEmail);
+    $('#codeForm').addEventListener('submit', submitCode);
+    $('#changeEmail').addEventListener('click', () => { setAuthError(); showAuthStep('email'); $('#authEmail').focus(); });
+    $('#syncNow').addEventListener('click', () => syncWithCloud());
+    $('#signOut').addEventListener('click', signOut);
     $$('.overlay').forEach(overlay => overlay.addEventListener('click', event => {
       if (event.target === overlay && !['cardOverlay','scannerOverlay'].includes(overlay.id)) hideOverlay(`#${overlay.id}`);
     }));
@@ -835,6 +1078,7 @@
     bindEvents();
     registerWebMCP();
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+    initializeCloud();
   }
 
   init();
