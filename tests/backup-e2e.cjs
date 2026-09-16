@@ -22,7 +22,7 @@ let browser;
   const errors=[];
   page.on('pageerror',e=>errors.push(e.message));
   await page.goto(`http://127.0.0.1:${server.address().port}`,{waitUntil:'load'});
-  await page.locator('#backupPanel').waitFor();
+  await page.locator('#backupPanel').waitFor({state:'attached'});
   const stored=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('kartochka.cards.v1')||'[]'));
   await page.locator('#addCardHome').click();
   await page.locator('#openManual').click();
@@ -56,7 +56,7 @@ let browser;
   console.log('PASS Unsupported image payload is rejected before writing');
   await page.evaluate(()=>localStorage.removeItem('kartochka.cards.v1'));
   await page.reload({waitUntil:'load'});
-  await page.locator('#backupPanel').waitFor();
+  await page.locator('#backupPanel').waitFor({state:'attached'});
   await page.locator('.nav-item[data-view=design]').click();
   page.once('dialog',dialog=>dialog.accept());
   await Promise.all([
