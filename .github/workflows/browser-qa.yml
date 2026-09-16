@@ -16,5 +16,7 @@ jobs:
         run: npm install --no-save --no-package-lock playwright@1.55.0 qrcode@1.5.4
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
-      - name: End-to-end test
+      - name: Existing wallet end-to-end tests
         run: node tests/e2e.cjs
+      - name: Backup and restore end-to-end tests
+        run: node tests/backup-e2e.cjs
