@@ -1,6 +1,8 @@
 name: Card wallet browser QA
 on:
   push:
+    branches: [main, fix/code-integrity-and-editing]
+  pull_request:
     branches: [main]
   workflow_dispatch:
 jobs:
@@ -20,3 +22,7 @@ jobs:
         run: node tests/e2e.cjs
       - name: Backup and restore end-to-end tests
         run: node tests/backup-e2e.cjs
+      - name: Code integrity and editing tests
+        run: node tests/quality-e2e.cjs
+      - name: Same-store QR identity regression
+        run: node tests/identity-e2e.cjs
