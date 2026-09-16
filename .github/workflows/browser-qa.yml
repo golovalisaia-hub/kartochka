@@ -1,7 +1,7 @@
 name: Card wallet browser QA
 on:
   push:
-    branches: [main, feature/email-password-cloud]
+    branches: [main, feature/email-password-cloud, fix/cloud-conflicts-and-status]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -30,3 +30,5 @@ jobs:
         run: node tests/brand-e2e.cjs
       - name: Email-code, account isolation and offline sync regression
         run: node tests/password-cloud-e2e.cjs
+      - name: Cloud conflicts, pending state and quota recovery
+        run: node tests/cloud-conflict-e2e.cjs
