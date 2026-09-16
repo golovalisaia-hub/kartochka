@@ -1,17 +1,10 @@
-/*
- * Публичная конфигурация Supabase.
- * Эти значения безопасно хранить во фронтенде: доступ к данным ограничивает RLS.
- * Не вставляйте сюда service_role key.
- */
+/* Public Supabase configuration; never place a service_role key here. */
 window.KARTOCHKA_CONFIG = {
   supabaseUrl: '',
   supabaseAnonKey: ''
 };
 
-/* Photo-name compatibility: the scanner may treat the dot before .png/.jpg
-   as part of a store name. Apply an extracted filename hint only to an empty
-   store field after the scanner opens the review form; never override a match
-   from the photo or the user's own input. */
+/* Photo filename is only a hint; never overwrite a recognized or typed store. */
 (() => {
   let filenameHint = null;
   window.addEventListener('change', event => {
@@ -34,11 +27,10 @@ window.KARTOCHKA_CONFIG = {
   }, true);
 })();
 
-/* Load the independent backup interface. It waits for DOMContentLoaded and
-   cannot mutate the wallet unless the user selects and confirms a file. */
-(() => {
+/* Independent, local-only backup and integrity/edit modules. */
+for (const src of ['./backup.js', './card-quality.js']) {
   const script = document.createElement('script');
-  script.src = './backup.js';
+  script.src = src;
   script.async = false;
   document.head.append(script);
-})();
+}
