@@ -10,21 +10,18 @@
   const priority = ['Лента','Магнит','Пятёрочка','Перекрёсток'];
   const stores = groups.flatMap(([category, names]) => names.map(name => ({ name, category })));
   const normalize = text => String(text || '').toLocaleLowerCase('ru').replace(/ё/g, 'е').replace(/[’'`]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-  let selected = '';
 
   function choose(name) {
     const input = $('storeName');
     if (!input) return;
     input.value = name;
     input.dispatchEvent(new Event('input', { bubbles: true }));
-    selected = name;
     render();
     $('cardNumber')?.focus();
   }
 
   function render() {
-    const panel = $('storeDirectory');
-    if (!panel) return;
+    if (!$('storeDirectory')) return;
     const query = normalize($('storeDirectorySearch')?.value);
     const all = $('storeDirectoryAll')?.checked;
     const list = $('storeDirectoryResults');
@@ -119,6 +116,10 @@
       $('addCardHome')?.click();
     });
   }
+
+  // Keep the original wallet icon intact when the top bar is simplified.
+  const walletArtwork = document.querySelector('#i-wallet path');
+  if (walletArtwork) walletArtwork.setAttribute('d', 'M4 7.8A2.8 2.8 0 0 1 6.8 5h10.7A2.5 2.5 0 0 1 20 7.5V19H6.8A2.8 2.8 0 0 1 4 16.2V7.8ZM4.4 8h13.1A2.5 2.5 0 0 1 20 10.5V13h-4.2a2 2 0 1 0 0 4H20M15.8 15h.01');
 
   const style = document.createElement('style');
   style.textContent = `
