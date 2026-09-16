@@ -1,7 +1,7 @@
 name: Card wallet browser QA
 on:
   push:
-    branches: [main, feature/full-brand-recognition]
+    branches: [main, feature/email-password-cloud]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -28,3 +28,5 @@ jobs:
         run: node tests/identity-e2e.cjs
       - name: Full retailer recognition and photo tests
         run: node tests/brand-e2e.cjs
+      - name: Email-code, account isolation and offline sync regression
+        run: node tests/password-cloud-e2e.cjs

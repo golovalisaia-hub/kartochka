@@ -1,4 +1,4 @@
-const CACHE = 'kartochka-v6';
+const CACHE = 'kartochka-v8';
 const APP_SHELL = [
   './',
   './index.html',
