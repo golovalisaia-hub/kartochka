@@ -27,8 +27,8 @@ window.KARTOCHKA_CONFIG = {
   }, true);
 })();
 
-/* Independent local utilities and account interface; never bundled with real user data. */
-for (const src of ['./backup.js', './card-quality.js', './password-auth.js']) {
+/* Independent local utilities. Authentication stays email + one-time code. */
+for (const src of ['./backup.js', './card-quality.js']) {
   const script = document.createElement('script');
   script.src = src;
   script.async = false;
