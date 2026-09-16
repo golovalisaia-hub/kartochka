@@ -24,3 +24,5 @@ jobs:
         run: node tests/backup-e2e.cjs
       - name: Code integrity and editing tests
         run: node tests/quality-e2e.cjs
+      - name: Same-store QR identity regression
+        run: node tests/identity-e2e.cjs
