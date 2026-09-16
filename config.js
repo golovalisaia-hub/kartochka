@@ -1,7 +1,7 @@
-/* Public Supabase configuration; never place a service_role key here. */
+/* Public Supabase config: publishable key is safe in a browser. NEVER use service_role / secret here. */
 window.KARTOCHKA_CONFIG = {
-  supabaseUrl: '',
-  supabaseAnonKey: ''
+  supabaseUrl: 'https://cwiechastoocixpnobuy.supabase.co',
+  supabaseAnonKey: 'sb_publishable_QqSAzVdGEW6_iDXoYxbOyw_--W22GiA'
 };
 
 /* Photo filename is only a hint; never overwrite a recognized or typed store. */
@@ -27,8 +27,8 @@ window.KARTOCHKA_CONFIG = {
   }, true);
 })();
 
-/* Independent, local-only backup and integrity/edit modules. */
-for (const src of ['./backup.js', './card-quality.js']) {
+/* Independent local utilities and account interface; never bundled with real user data. */
+for (const src of ['./backup.js', './card-quality.js', './password-auth.js']) {
   const script = document.createElement('script');
   script.src = src;
   script.async = false;
