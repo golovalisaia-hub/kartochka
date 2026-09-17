@@ -28,10 +28,10 @@ jobs:
         run: node tests/identity-e2e.cjs
       - name: Full retailer recognition and photo tests
         run: node tests/brand-e2e.cjs
-      - name: Email-code, account isolation and offline sync regression
-        run: node tests/password-cloud-e2e.cjs
-      - name: OTP delivery messaging and errors
-        run: node tests/otp-delivery-e2e.cjs
+      - name: Temporary magic-link diagnosis
+        run: node tests/diagnose-link.cjs
+      - name: Magic-link browser flow, local data preservation and account isolation
+        run: node tests/magic-link-e2e.cjs
       - name: Cloud conflicts, pending state and quota recovery
         run: node tests/cloud-conflict-e2e.cjs
       - name: Atomic two-device revision and deletion regression
