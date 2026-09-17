@@ -32,3 +32,5 @@ jobs:
         run: node tests/password-cloud-e2e.cjs
       - name: Cloud conflicts, pending state and quota recovery
         run: node tests/cloud-conflict-e2e.cjs
+      - name: Atomic two-device revision and deletion regression
+        run: node tests/atomic-sync.cjs
