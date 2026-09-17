@@ -11,7 +11,7 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const row = number => ({
   user_id:id, id:cardId, store:'Лента', number, color_a:'#245bd0', color_b:'#122d78',
   text_color:'#fff', last_used:1700000000000, format:'qr_code', code_image:null,
-  updated_at:'2026-09-16T20:00:00Z'
+  updated_at:'2026-09-16T20:00:00Z', revision:1, deleted_at:null
 });
 const local = number => ({ id:cardId, store:'Лента', number, a:'#245bd0', b:'#122d78',
   text:'#fff', lastUsed:1700000000000, format:'qr_code', codeImage:null });
@@ -74,7 +74,7 @@ const server = http.createServer((req, res) => {
 
     // Device A changes the local card. Device B edits that same card in cloud.
     await page.evaluate(card => localStorage.setItem('kartochka.cards.v1', JSON.stringify([card])), local('DEVICE-A-002'));
-    remote[0].number = 'DEVICE-B-003';
+    remote[0].number = 'DEVICE-B-003'; remote[0].revision++;
     const before = writes;
     const conflict = await page.evaluate(async () => {
       try { await window.KartochkaCloud.listCards(); return null; }
@@ -88,9 +88,9 @@ const server = http.createServer((req, res) => {
     console.log('PASS divergent card edits are blocked without overwriting either copy');
 
     // Even when the server changes AFTER the first GET, the second GET before writing must stop a stale upload.
-    remote[0].number = 'ORIGINAL-001';
+    remote[0].number = 'ORIGINAL-001'; remote[0].revision++;
     await page.evaluate(async () => window.KartochkaCloud.listCards());
-    remote[0].number = 'DEVICE-B-004';
+    remote[0].number = 'DEVICE-B-004'; remote[0].revision++;
     const stale = await page.evaluate(async card => {
       try { await window.KartochkaCloud.upsertCards([card]); return null; }
       catch (error) { return error.message; }

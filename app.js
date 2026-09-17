@@ -141,7 +141,11 @@
   function queueCloudSync() {
     if (!state.user || !cloudAvailable()) return;
     clearTimeout(state.cloudTimer);
-    state.cloudTimer = setTimeout(() => syncWithCloud({ quiet: true }), 450);
+    try { localStorage.setItem('kartochka.sync-pending.v1.' + state.user.id, '1'); } catch (_) {}
+    state.cloudTimer = setTimeout(() => {
+      if (state.cloudBusy) queueCloudSync();
+      else syncWithCloud({ quiet: true });
+    }, 450);
   }
 
   function readStringList(key) {
@@ -185,22 +189,21 @@
     updateCloudUI();
     showAuthStep('account');
     try {
-      const previousUser = localStorage.getItem(CLOUD_USER_KEY);
-      const firstSyncForUser = initial || previousUser !== state.user.id;
+      const walletBeforeSync = JSON.stringify(state.cards);
       const deletionKey = cloudDeletionsKey();
       const pendingDeletions = readStringList(deletionKey);
       for (const id of pendingDeletions) await window.KartochkaCloud.deleteCard(id);
       if (pendingDeletions.length) localStorage.removeItem(deletionKey);
 
-      const remoteCards = await window.KartochkaCloud.listCards();
-      const remoteIds = new Set(remoteCards.map(card => card.id));
-      const previouslySynced = new Set(readStringList(cloudIdsKey()));
-      const localCards = firstSyncForUser
-        ? state.cards
-        : state.cards.filter(card => remoteIds.has(card.id) || !previouslySynced.has(card.id));
-      state.cards = mergeCards(localCards, remoteCards);
-      saveCards(false);
-      await window.KartochkaCloud.upsertCards(state.cards);
+      // listCards reconciles remote tombstones, cached cards and offline edits.
+      // Never union local cards again: that would resurrect a deleted card.
+      const reconciled = await window.KartochkaCloud.listCards();
+      if (JSON.stringify(state.cards) !== walletBeforeSync) {
+        throw new Error('Карты изменились во время синхронизации. Повторите попытку.');
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(reconciled));
+      state.cards = reconciled;
+      await window.KartochkaCloud.upsertCards(reconciled);
       localStorage.setItem(CLOUD_USER_KEY, state.user.id);
       localStorage.setItem(cloudIdsKey(), JSON.stringify(state.cards.map(card => card.id)));
       renderStack();
@@ -276,16 +279,23 @@
   }
 
   async function signOut() {
-    await window.KartochkaCloud.signOut();
-    state.user = null;
-    state.cards = [];
-    saveCards(false);
-    localStorage.removeItem(CLOUD_USER_KEY);
-    renderStack();
-    renderGrid();
-    updateCloudUI();
-    showAuthStep('email');
-    toast('Вы вышли из аккаунта');
+    try {
+      // cloud.js first stores a verified recovery copy. If it cannot, stay signed in.
+      await window.KartochkaCloud.signOut();
+      localStorage.removeItem(STORAGE_KEY);
+      state.user = null;
+      state.cards = [];
+      localStorage.removeItem(CLOUD_USER_KEY);
+      renderStack();
+      renderGrid();
+      updateCloudUI();
+      showAuthStep('email');
+      toast('Вы вышли из аккаунта');
+    } catch (error) {
+      const message = cloudErrorMessage(error);
+      setAuthError(message);
+      toast(message);
+    }
   }
 
   function initials(name) {
@@ -834,26 +844,26 @@
       return;
     }
     const remainingCards = state.cards.filter(item => item.id !== state.activeCardId);
+    const hasCloud = Boolean(state.user && cloudAvailable());
+    const deletionKey = hasCloud ? cloudDeletionsKey() : '';
+    const previousQueue = hasCloud ? localStorage.getItem(deletionKey) : null;
     try {
+      // Queue the tombstone before changing the active wallet; roll it back on failure.
+      if (hasCloud) rememberCloudDeletion(card.id);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(remainingCards));
     } catch (_) {
+      if (hasCloud) {
+        try {
+          if (previousQueue === null) localStorage.removeItem(deletionKey);
+          else localStorage.setItem(deletionKey, previousQueue);
+        } catch (_) {}
+      }
       hideOverlay('#deleteConfirmOverlay');
-      toast('Не удалось удалить карту. Проверьте доступ к хранилищу.');
+      toast('Не удалось безопасно удалить карту. Проверьте доступ к хранилищу.');
       return;
     }
     state.cards = remainingCards;
-    if (state.user && cloudAvailable()) {
-      rememberCloudDeletion(card.id);
-      window.KartochkaCloud.deleteCard(card.id).then(() => {
-        const key = cloudDeletionsKey();
-        const ids = readStringList(key).filter(id => id !== card.id);
-        if (ids.length) localStorage.setItem(key, JSON.stringify(ids));
-        else localStorage.removeItem(key);
-        localStorage.setItem(cloudIdsKey(), JSON.stringify(remainingCards.map(item => item.id)));
-      }).catch(() => {
-        toast('Карта удалена локально, но облако пока недоступно');
-      });
-    }
+    if (hasCloud) queueCloudSync();
     releaseScreenWakeLock();
     hideOverlay('#deleteConfirmOverlay');
     hideOverlay('#cardOverlay');
