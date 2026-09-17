@@ -1,4 +1,4 @@
-/* OTP delivery feedback. A successful API response does not prove delivery. */
+/* OTP delivery feedback. An accepted request never proves that an email arrived. */
 (() => {
   'use strict';
   const RETRY_DELAY_MS = 60_000;
@@ -85,6 +85,11 @@
       }
     });
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setup, { once: true });
-  else setup();
+  // Dynamic scripts may execute before, during, or after defer execution.
+  // DOMContentLoaded runs after cloud.js/app.js; load covers interactive late scripts.
+  if (document.readyState === 'complete') setup();
+  else {
+    document.addEventListener('DOMContentLoaded', setup, { once: true });
+    window.addEventListener('load', setup, { once: true });
+  }
 })();
