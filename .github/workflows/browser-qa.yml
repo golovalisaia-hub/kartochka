@@ -30,6 +30,8 @@ jobs:
         run: node tests/brand-e2e.cjs
       - name: Email-code, account isolation and offline sync regression
         run: node tests/password-cloud-e2e.cjs
+      - name: OTP delivery messaging and errors
+        run: node tests/otp-delivery-e2e.cjs
       - name: Cloud conflicts, pending state and quota recovery
         run: node tests/cloud-conflict-e2e.cjs
       - name: Atomic two-device revision and deletion regression
