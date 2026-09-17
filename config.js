@@ -27,8 +27,8 @@ window.KARTOCHKA_CONFIG = {
   }, true);
 })();
 
-/* Independent local utilities. Authentication stays email + one-time code. */
-for (const src of ['./backup.js', './card-quality.js', './auth-delivery.js']) {
+/* Independent local utilities. Auth accepts Supabase email links now and remains compatible with numeric OTP later. */
+for (const src of ['./auth-magic-link.js', './backup.js', './card-quality.js', './auth-delivery.js']) {
   const script = document.createElement('script');
   script.src = src;
   script.async = false;
