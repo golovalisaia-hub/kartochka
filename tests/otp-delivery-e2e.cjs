@@ -1,4 +1,4 @@
-/* Browser test for OTP UX. API responses are mocked: no real emails or user accounts. */
+/* Browser test for passwordless email UX. API responses are mocked: no real emails or user accounts. */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -42,13 +42,13 @@ const server = http.createServer((req, res) => {
     await page.locator('#authEmail').fill('test@example.test');
     await page.locator('#sendCodeButton').click();
     await page.locator('#codeForm').waitFor({state:'visible'});
-    assert.match(await page.locator('#codeForm .auth-copy').first().innerText(), /не подтверждает доставку/i);
-    assert.match(await page.locator('#otpDeliveryHelp').innerText(), /ссылка вместо цифр/i);
+    assert.match(await page.locator('#codeForm .auth-copy').first().innerText(), /кнопка или ссылка/i);
+    assert.match(await page.locator('#otpDeliveryHelp').innerText(), /вход завершится автоматически/i);
     assert.equal(await page.locator('#resendCode').isDisabled(), true);
     assert.match(await page.locator('#resendCode').innerText(), /Повторить через/);
     assert.equal(sent, 1);
     assert.equal(await page.locator('#authPassword').count(), 0);
-    console.log('PASS accepted request does not claim delivered email; explains Magic Link mismatch and limits retries');
+    console.log('PASS accepted request explains link-or-code passwordless flow and limits retries');
 
     reject = true;
     await page.reload({ waitUntil:'load' });
@@ -57,11 +57,11 @@ const server = http.createServer((req, res) => {
     await page.locator('#authEmail').fill('test@example.test');
     await page.locator('#sendCodeButton').click();
     await page.locator('#authError').waitFor({state:'visible'});
-    assert.match(await page.locator('#authError').innerText(), /Supabase запрещает отправлять письма/);
+    assert.match(await page.locator('#authError').innerText(), /Supabase пока разрешает отправку только на почту участника проекта/);
     assert.equal(await page.locator('#codeForm').isVisible(), false);
     assert.equal(sent, 2);
     assert.deepEqual(pageErrors, []);
-    console.log('PASS unauthorized email displays useful error and does not claim code sent; no page errors');
+    console.log('PASS unauthorized email displays useful error; no false success and no page errors');
     await ctx.close();
   } finally {
     await browser.close();
