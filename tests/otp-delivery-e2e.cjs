@@ -39,16 +39,18 @@ const server = http.createServer((req, res) => {
     await page.goto(url, { waitUntil:'load' });
     await page.locator('#resendCode').waitFor({state:'attached'});
     await page.locator('#accountButton').click();
+    assert.match(await page.locator('#sendCodeButton').innerText(), /Получить код/);
     await page.locator('#authEmail').fill('test@example.test');
     await page.locator('#sendCodeButton').click();
     await page.locator('#codeForm').waitFor({state:'visible'});
-    assert.match(await page.locator('#codeForm .auth-copy').first().innerText(), /кнопка или ссылка/i);
-    assert.match(await page.locator('#otpDeliveryHelp').innerText(), /вход завершится автоматически/i);
+    assert.match(await page.locator('#codeForm .auth-copy').first().innerText(), /Введите код из письма/);
+    assert.match(await page.locator('#otpDeliveryHelp').innerText(), /доставка письма ещё не подтверждена/);
+    assert.equal(await page.locator('#authCode').isEnabled(), true);
     assert.equal(await page.locator('#resendCode').isDisabled(), true);
     assert.match(await page.locator('#resendCode').innerText(), /Повторить через/);
     assert.equal(sent, 1);
     assert.equal(await page.locator('#authPassword').count(), 0);
-    console.log('PASS accepted request explains link-or-code passwordless flow and limits retries');
+    console.log('PASS OTP input remains enabled; delivery not falsely confirmed; resend throttled');
 
     reject = true;
     await page.reload({ waitUntil:'load' });
