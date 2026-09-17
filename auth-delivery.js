@@ -1,4 +1,4 @@
-/* Better email-code delivery feedback. Never treats an accepted request as proof of inbox delivery. */
+/* OTP delivery feedback. A successful API response does not prove delivery. */
 (() => {
   'use strict';
   const RETRY_DELAY_MS = 60_000;
@@ -12,20 +12,20 @@
 
     const copy = form.querySelector('.auth-copy');
     if (copy) copy.replaceChildren(
-      document.createTextNode('Сервер принял запрос для '), email,
-      document.createTextNode('. Это ещё не подтверждает доставку письма. Проверьте входящие и «Спам».')
+      document.createTextNode('Запрос на письмо для '), email,
+      document.createTextNode(' принят сервером. Это ещё не подтверждает доставку. Проверьте входящие и «Спам».')
     );
     const help = document.createElement('p');
     help.className = 'auth-copy';
     help.id = 'otpDeliveryHelp';
-    help.textContent = 'Нет письма? Проверьте адрес и папку «Спам». Если сервер отказал в отправке, приложение покажет причину.';
+    help.textContent = 'Пришла ссылка вместо цифр? Владелец должен добавить {{ .Token }} в шаблоны Confirm signup и Magic Link / OTP в Supabase. Ссылку нельзя вставить в поле кода.';
     form.insertBefore(help, change);
 
     const retry = document.createElement('button');
     retry.id = 'resendCode';
     retry.type = 'button';
     retry.className = 'text-button auth-link';
-    retry.textContent = 'Отправить код ещё раз';
+    retry.textContent = 'Запросить код ещё раз';
     form.insertBefore(retry, change);
     let retryAfter = 0;
     let ticker = null;
@@ -36,7 +36,7 @@
         retry.textContent = `Повторить через ${seconds} с`;
       } else {
         retry.disabled = false;
-        retry.textContent = 'Отправить код ещё раз';
+        retry.textContent = 'Запросить код ещё раз';
         if (ticker) clearInterval(ticker);
         ticker = null;
       }
@@ -54,15 +54,15 @@
         return result;
       } catch (error) {
         const message = String(error?.message || '').toLowerCase();
-        if (/email.*not.*authori[sz]ed|email_address_not_authorized|not authori[sz]ed.*email|email.*not.*allowed/.test(message) || error?.status === 403) {
-          throw new Error('Сервер запретил отправку на эту почту. Для входа любых пользователей владелец должен настроить собственный SMTP в Supabase → Authentication → SMTP Settings.');
+        if (/email.*not.*authori[sz]ed|email_address_not_authorized|not authori[sz]ed.*email|email.*not.*allowed/.test(message)) {
+          throw new Error('Supabase запрещает отправлять письма на этот адрес. Владелец должен подключить свой SMTP для регистрации любых пользователей.');
         }
         if (/rate.limit|too many|over_email_send_rate_limit/.test(message) || error?.status === 429) {
           cooldown();
-          throw new Error('Превышен лимит отправки писем. Подождите и повторите попытку позже.');
+          throw new Error('Превышен лимит отправки. Подождите и повторите попытку позже.');
         }
         if (/smtp|sending email|send.*email|mail service|email provider/.test(message)) {
-          throw new Error('Почтовый сервер не смог отправить письмо. Проверьте настройки SMTP в Supabase и журнал ошибок Auth.');
+          throw new Error('Почтовый сервер не смог отправить письмо. Проверьте настройки SMTP и журнал ошибок Auth в Supabase.');
         }
         throw error;
       }
@@ -75,7 +75,7 @@
       if (errorNode) { errorNode.textContent = ''; errorNode.hidden = true; }
       try {
         await cloud.sendCode(email.textContent.trim());
-        help.textContent = 'Повторный запрос принят сервером. Проверьте входящие и «Спам». Доставка ещё не подтверждена.';
+        help.textContent = 'Повторный запрос принят сервером. Если опять пришла ссылка вместо цифр, необходимо исправить шаблон письма Supabase.';
       } catch (error) {
         if (errorNode) {
           errorNode.textContent = String(error?.message || 'Не удалось запросить код.');
