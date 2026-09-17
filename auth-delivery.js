@@ -1,32 +1,41 @@
-/* OTP delivery feedback. An accepted request never proves that an email arrived. */
+/* Email-auth UX: supports Supabase Magic Link today and numeric OTP later without passwords. */
 (() => {
   'use strict';
   const RETRY_DELAY_MS = 60_000;
+
   function setup() {
     const cloud = window.KartochkaCloud;
-    const form = document.getElementById('codeForm');
+    const emailForm = document.getElementById('emailForm');
+    const codeForm = document.getElementById('codeForm');
     const email = document.getElementById('sentEmail');
     const change = document.getElementById('changeEmail');
-    if (!cloud?.sendCode || !form || !email || !change || cloud.__deliveryFeedback) return;
+    const sendButton = document.getElementById('sendCodeButton');
+    if (!cloud?.sendCode || !emailForm || !codeForm || !email || !change || cloud.__deliveryFeedback) return;
     cloud.__deliveryFeedback = true;
 
-    const copy = form.querySelector('.auth-copy');
+    const emailCopy = emailForm.querySelector('.auth-copy');
+    if (emailCopy) emailCopy.textContent = 'Введите почту. Мы отправим письмо для входа — пароль не нужен.';
+    if (sendButton) sendButton.textContent = 'Отправить письмо';
+
+    const copy = codeForm.querySelector('.auth-copy');
     if (copy) copy.replaceChildren(
-      document.createTextNode('Запрос на письмо для '), email,
-      document.createTextNode(' принят сервером. Это ещё не подтверждает доставку. Проверьте входящие и «Спам».')
+      document.createTextNode('Письмо отправлено на '), email,
+      document.createTextNode('. Если в письме есть кнопка или ссылка — откройте её. Если придёт код, введите его ниже.')
     );
+
     const help = document.createElement('p');
     help.className = 'auth-copy';
     help.id = 'otpDeliveryHelp';
-    help.textContent = 'Пришла ссылка вместо цифр? Владелец должен добавить {{ .Token }} в шаблоны Confirm signup и Magic Link / OTP в Supabase. Ссылку нельзя вставить в поле кода.';
-    form.insertBefore(help, change);
+    help.textContent = 'После перехода по ссылке вернитесь в «Карточку»: вход завершится автоматически. Ссылка одноразовая.';
+    codeForm.insertBefore(help, change);
 
     const retry = document.createElement('button');
     retry.id = 'resendCode';
     retry.type = 'button';
     retry.className = 'text-button auth-link';
-    retry.textContent = 'Запросить код ещё раз';
-    form.insertBefore(retry, change);
+    retry.textContent = 'Отправить письмо ещё раз';
+    codeForm.insertBefore(retry, change);
+
     let retryAfter = 0;
     let ticker = null;
     function drawRetry() {
@@ -36,7 +45,7 @@
         retry.textContent = `Повторить через ${seconds} с`;
       } else {
         retry.disabled = false;
-        retry.textContent = 'Запросить код ещё раз';
+        retry.textContent = 'Отправить письмо ещё раз';
         if (ticker) clearInterval(ticker);
         ticker = null;
       }
@@ -46,6 +55,7 @@
       drawRetry();
       if (!ticker) ticker = setInterval(drawRetry, 1000);
     }
+
     const send = cloud.sendCode.bind(cloud);
     cloud.sendCode = async address => {
       try {
@@ -55,18 +65,19 @@
       } catch (error) {
         const message = String(error?.message || '').toLowerCase();
         if (/email.*not.*authori[sz]ed|email_address_not_authorized|not authori[sz]ed.*email|email.*not.*allowed/.test(message)) {
-          throw new Error('Supabase запрещает отправлять письма на этот адрес. Владелец должен подключить свой SMTP для регистрации любых пользователей.');
+          throw new Error('Supabase пока разрешает отправку только на почту участника проекта.');
         }
         if (/rate.limit|too many|over_email_send_rate_limit/.test(message) || error?.status === 429) {
           cooldown();
-          throw new Error('Превышен лимит отправки. Подождите и повторите попытку позже.');
+          throw new Error('Превышен лимит отправки. Подождите и попробуйте снова.');
         }
         if (/smtp|sending email|send.*email|mail service|email provider/.test(message)) {
-          throw new Error('Почтовый сервер не смог отправить письмо. Проверьте настройки SMTP и журнал ошибок Auth в Supabase.');
+          throw new Error('Почтовая отправка в Supabase сейчас настроена неправильно. Отключите неработающий Custom SMTP или исправьте его настройки.');
         }
         throw error;
       }
     };
+
     retry.addEventListener('click', async () => {
       if (retry.disabled || !email.textContent.trim()) return;
       retry.disabled = true;
@@ -75,18 +86,32 @@
       if (errorNode) { errorNode.textContent = ''; errorNode.hidden = true; }
       try {
         await cloud.sendCode(email.textContent.trim());
-        help.textContent = 'Повторный запрос принят сервером. Если опять пришла ссылка вместо цифр, необходимо исправить шаблон письма Supabase.';
+        help.textContent = 'Новое письмо запрошено. Используйте только самое свежее письмо: старые ссылки могут уже не работать.';
       } catch (error) {
         if (errorNode) {
-          errorNode.textContent = String(error?.message || 'Не удалось запросить код.');
+          errorNode.textContent = String(error?.message || 'Не удалось отправить письмо.');
           errorNode.hidden = false;
         }
         drawRetry();
       }
     });
+
+    try {
+      const message = sessionStorage.getItem('kartochka.auth-message.v1');
+      if (message) {
+        sessionStorage.removeItem('kartochka.auth-message.v1');
+        setTimeout(() => {
+          const toast = document.getElementById('toast');
+          if (toast) {
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3500);
+          }
+        }, 250);
+      }
+    } catch (_) {}
   }
-  // Dynamic scripts may execute before, during, or after defer execution.
-  // DOMContentLoaded runs after cloud.js/app.js; load covers interactive late scripts.
+
   if (document.readyState === 'complete') setup();
   else {
     document.addEventListener('DOMContentLoaded', setup, { once: true });
