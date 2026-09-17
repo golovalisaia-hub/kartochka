@@ -123,7 +123,12 @@
     const send = document.getElementById('sendCodeButton');
     if (send) send.textContent = 'Получить ссылку';
     const copy = codeForm.querySelector('.auth-copy');
-    if (copy) copy.textContent = 'Запрос на письмо принят сервером. Откройте письмо и нажмите ссылку для входа. Это ещё не подтверждает доставку.';
+    const email = document.getElementById('sentEmail');
+    // Keep the existing #sentEmail node: app.js fills its text after /otp responds.
+    if (copy && email) copy.replaceChildren(
+      document.createTextNode('Запрос на письмо для '), email,
+      document.createTextNode(' принят сервером. Откройте письмо и нажмите ссылку для входа. Это ещё не подтверждает доставку.')
+    );
     const hiddenField = codeForm.querySelector('.form-field');
     if (hiddenField) hiddenField.hidden = true;
     const verify = document.getElementById('verifyCodeButton');
