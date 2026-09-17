@@ -1,7 +1,7 @@
 name: Card wallet browser QA
 on:
   push:
-    branches: [main, feature/email-password-cloud, fix/cloud-conflicts-and-status]
+    branches: [main, feature/email-password-cloud, fix/cloud-conflicts-and-status, fix/magic-link-fallback]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -32,6 +32,8 @@ jobs:
         run: node tests/password-cloud-e2e.cjs
       - name: OTP delivery messaging and errors
         run: node tests/otp-delivery-e2e.cjs
+      - name: Magic-link fallback login
+        run: node tests/magic-link-e2e.cjs
       - name: Cloud conflicts, pending state and quota recovery
         run: node tests/cloud-conflict-e2e.cjs
       - name: Atomic two-device revision and deletion regression
