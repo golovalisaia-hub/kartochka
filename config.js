@@ -4,6 +4,23 @@ window.KARTOCHKA_CONFIG = {
   supabaseAnonKey: 'sb_publishable_QqSAzVdGEW6_iDXoYxbOyw_--W22GiA'
 };
 
+/* The existing wallet may be cleared by the old session initializer before
+ * the asynchronous Magic Link verification finishes. Preserve its exact bytes
+ * first, so even an expired link or offline validation cannot destroy cards.
+ */
+(() => {
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
+  if (!(hash.has('access_token') || hash.has('error') || hash.has('error_code'))) return;
+  const backup = {
+    cards: localStorage.getItem('kartochka.cards.v1'),
+    owner: localStorage.getItem('kartochka.cloud-user.v1'),
+    session: localStorage.getItem('kartochka.supabase-session.v1')
+  };
+  window.__kartochkaMagicBackup = backup;
+  try { sessionStorage.setItem('kartochka.magic-link-backup.v1', JSON.stringify(backup)); }
+  catch (_) { /* The in-memory copy is still available for this page load. */ }
+})();
+
 /* Photo filename is only a hint; never overwrite a recognized or typed store. */
 (() => {
   let filenameHint = null;
@@ -27,8 +44,8 @@ window.KARTOCHKA_CONFIG = {
   }, true);
 })();
 
-/* Independent local utilities. Authentication stays email + one-time code. */
-for (const src of ['./backup.js', './card-quality.js', './auth-delivery.js']) {
+/* Independent local utilities. Temporary email link flow, no passwords. */
+for (const src of ['./backup.js', './card-quality.js', './auth-magic-link.js']) {
   const script = document.createElement('script');
   script.src = src;
   script.async = false;
