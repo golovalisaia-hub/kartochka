@@ -28,7 +28,7 @@ window.KARTOCHKA_CONFIG = {
 })();
 
 /* Independent local utilities. Authentication stays email + one-time code. */
-for (const src of ['./backup.js', './card-quality.js']) {
+for (const src of ['./backup.js', './card-quality.js', './auth-delivery.js']) {
   const script = document.createElement('script');
   script.src = src;
   script.async = false;
