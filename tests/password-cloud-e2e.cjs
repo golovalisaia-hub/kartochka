@@ -44,6 +44,26 @@ async function attachMock(context) {
       return ok(session(id, email));
     }
     if (u.pathname === '/auth/v1/logout') return ok(null, 204);
+    if (u.pathname === '/rest/v1/rpc/apply_card_change') {
+      const id = token.replace('Bearer test-access-', '');
+      if (!Object.values(accounts).includes(id)) return ok({ message:'Unauthenticated' }, 401);
+      const current = remote.get(id) || [];
+      const existing = current.find(row => row.id === body.p_card_id);
+      const actualRevision = existing ? Number(existing.revision || 1) : 0;
+      if (Number(body.p_expected_revision) !== actualRevision || (existing?.deleted_at && !body.p_delete)) {
+        return ok({ code:'P0001', message:'SYNC_CONFLICT' }, 409);
+      }
+      if (body.p_delete) {
+        if (!existing || existing.deleted_at) return ok({ code:'P0001', message:'SYNC_CONFLICT' }, 409);
+        Object.assign(existing, { store:'Удалена', number:'0', code_image:null,
+          deleted_at:new Date().toISOString(), revision:actualRevision + 1 });
+      } else {
+        const replacement = { ...(existing || {}), ...body.p_card,
+          id:body.p_card_id, user_id:id, deleted_at:null, revision:actualRevision + 1 };
+        remote.set(id, [...current.filter(row => row.id !== body.p_card_id), replacement]);
+      }
+      return ok({ revision:actualRevision + 1, deleted:Boolean(body.p_delete) });
+    }
     if (u.pathname === '/rest/v1/cards') {
       const id = token.replace('Bearer test-access-', '');
       if (!Object.values(accounts).includes(id)) return ok({ message:'Unauthenticated' }, 401);
