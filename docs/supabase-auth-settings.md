@@ -1,7 +1,22 @@
-# Required Supabase Auth settings
+# Supabase Auth settings — verified 18 September 2026
 
-Supabase project `kartochka` is connected to the public app through a publishable key, not a service role key. Password login is configured in the website, but a real inbox test and project authentication settings confirmation are required before production readiness.
+Project: `kartochka` (`cwiechastoocixpnobuy`). The public GitHub Pages client uses the publishable/anon key only; no service-role secret is exposed.
 
-In Supabase Dashboard -> Authentication -> URL Configuration, set Site URL to `https://golovalisaia-hub.github.io/kartochka/` and add the same redirect URL. Authentication -> Providers -> Email must be enabled. Leave email confirmation ON. The default SMTP relay may have limits; set up a reliable sender before welcoming many users.
+## Verified configuration
 
-Never publish a service_role/secret key or a user's password. A successful static-site deployment proves neither email delivery nor cross-device synchronization.
+- Passwordless email authentication is implemented with `/auth/v1/otp` and `/auth/v1/verify` (`type: email`).
+- **Magic link or OTP** contains the numeric `{{ .Token }}` code.
+- **Confirm sign up** contains `{{ .Token }}` and keeps `{{ .ConfirmationURL }}` as a fallback.
+- Site URL: `https://golovalisaia-hub.github.io/kartochka/`
+- Redirect allow-list: `https://golovalisaia-hub.github.io/kartochka/`
+- Email confirmation remains enabled.
+
+## Email delivery status
+
+An incomplete Gmail custom-SMTP configuration was disabled so it cannot intercept and fail auth mail. Supabase's built-in sender is now the active fallback, but it only sends to pre-authorized project-team addresses and is not intended for production.
+
+Before opening sign-in to arbitrary users, configure a transactional SMTP provider with a verified sender, host, port, username and password. Do not commit SMTP credentials or any service-role key. A real inbox delivery test is still required after those credentials are configured.
+
+## Data protection
+
+`public.cards` has RLS enabled with separate ownership policies for SELECT, INSERT, UPDATE and DELETE. The atomic `apply_card_change` RPC is executable by `authenticated` only, and revisions/tombstones protect against stale overwrites and deletion resurrection.
