@@ -1,5 +1,18 @@
-# Облачная синхронизация — проверка 16 сентября 2026
+# Облачная синхронизация — проверка 18 сентября 2026
 
-Supabase project `kartochka` exists, but the original website had empty `config.js` and used one-time email codes instead of email/password. `public.cards` was absent before setup. Applied migration `migrations/20260916_cloud_cards.sql` through Supabase and checked security advisors (no findings). Public client must use only the publishable key; never use a service role key in GitHub Pages.
+Проект Supabase `kartochka` (`cwiechastoocixpnobuy`) работает и имеет статус `ACTIVE_HEALTHY`. Таблица `public.cards` существует, RLS включён, чужие строки недоступны. На момент проверки в таблице 0 карт; тестовые или пользовательские карты в production не создавались и не удалялись.
 
-Authentication redirect allow-list and email sending settings cannot be inspected or changed by the available Supabase connector. Confirm in Supabase Dashboard → Authentication → URL Configuration: Site URL and redirect URL must be set to `https://golovalisaia-hub.github.io/kartochka/`. Confirm email provider is enabled. An end-to-end test with a real inbox and two devices is necessary before claiming complete reliability.
+Проверено:
+
+- первый вход переносит локальные карты в облако, не очищая кошелёк до успешного согласования;
+- второй браузер того же аккаунта получает карту;
+- другой аккаунт не видит чужие карты;
+- новые, изменённые и удалённые карты синхронизируются через ревизии и tombstone-записи;
+- конфликт двух устройств не перезаписывает молча одну из версий;
+- временная потеря сети оставляет карты локально и отмечает синхронизацию как незавершённую;
+- перед выходом и при окончательно недействительной сессии создаётся отдельная восстановительная копия;
+- опубликованный GitHub Pages открывает актуальную форму «Получить код» без поля пароля.
+
+Шаблоны писем содержат цифровой `{{ .Token }}`. Site URL и redirect URL указывают на `https://golovalisaia-hub.github.io/kartochka/`.
+
+Незавершённый production-блокер: для писем на любые пользовательские адреса нужен корректный transactional SMTP. Неполная Gmail SMTP-конфигурация отключена; встроенная отправка Supabase подходит только для адресов участников проекта. Реальная доставка в произвольный почтовый ящик и реальная синхронизация на двух физических устройствах не заявляются как проверенные до настройки SMTP и inbox-теста.
