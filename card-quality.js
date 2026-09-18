@@ -133,7 +133,10 @@
       if (original.number !== number || original.format !== format) updated.codeImage = null;
       cards[index] = updated;
       // Single atomic write. On a quota error original local data remains intact.
-      localStorage.setItem(KEY, JSON.stringify(cards));
+      const json = JSON.stringify(cards);
+      localStorage.setItem(KEY, json);
+      try { localStorage.setItem('kartochka.cards.recovery.v1', json); } catch (_) {}
+      window.KartochkaRecovery?.save?.(cards);
       // Existing cloud sync uses lastUsed to merge this revision when the app reloads.
       window.location.reload();
     } catch (error) { $('editError').textContent = error.message || 'Не удалось сохранить карту.'; }

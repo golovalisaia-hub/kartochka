@@ -323,7 +323,12 @@
         if (scan.image && card.codeImage !== scan.image) { card.codeImage = scan.image; patched = true; }
       }
       if (patched) {
-        try { localStorage.setItem(CARDS_KEY, JSON.stringify(cards)); }
+        try {
+          const json = JSON.stringify(cards);
+          localStorage.setItem(CARDS_KEY, json);
+          try { localStorage.setItem('kartochka.cards.recovery.v1', json); } catch (_) {}
+          window.KartochkaRecovery?.save?.(cards);
+        }
         catch { notice('Не удалось сохранить оригинал: освободите память устройства.'); return; }
       }
       await remember(number, store);

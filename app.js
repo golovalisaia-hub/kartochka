@@ -2,6 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'kartochka.cards.v1';
+  const RECOVERY_KEY = 'kartochka.cards.recovery.v1';
   const THEME_KEY = 'kartochka.wallet-theme.v1';
   const DEMO_CLEANUP_KEY = 'kartochka.demo-cleanup.v1';
   const CLOUD_USER_KEY = 'kartochka.cloud-user.v1';
@@ -34,7 +35,7 @@
   const $ = selector => document.querySelector(selector);
   const $$ = selector => [...document.querySelectorAll(selector)];
   const state = {
-    cards: loadCards(),
+    cards: [],
     theme: localStorage.getItem(THEME_KEY) || 'black',
     walletOpen: false,
     selectedPalette: palettes[0],
@@ -53,15 +54,19 @@
 
   function loadCards() {
     try {
-      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      let stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
       if (!Array.isArray(stored)) {
-        localStorage.setItem(DEMO_CLEANUP_KEY, '1');
-        return [];
+        stored = JSON.parse(localStorage.getItem(RECOVERY_KEY));
+        if (!Array.isArray(stored)) {
+          localStorage.setItem(DEMO_CLEANUP_KEY, '1');
+          return [];
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
       }
       if (!localStorage.getItem(DEMO_CLEANUP_KEY)) {
         const cleaned = stored.filter(card => !LEGACY_DEMO_NUMBERS.has(String(card.number)));
         localStorage.setItem(DEMO_CLEANUP_KEY, '1');
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
+        persistCards(cleaned);
         return cleaned;
       }
       return stored;
@@ -70,8 +75,15 @@
     }
   }
 
+  function persistCards(cards) {
+    const json = JSON.stringify(cards);
+    localStorage.setItem(STORAGE_KEY, json);
+    try { localStorage.setItem(RECOVERY_KEY, json); } catch (_) {}
+    window.KartochkaRecovery?.save?.(cards);
+  }
+
   function saveCards(sync = true) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.cards));
+    persistCards(state.cards);
     if (sync) queueCloudSync();
   }
 
@@ -201,7 +213,7 @@
       if (JSON.stringify(state.cards) !== walletBeforeSync) {
         throw new Error('Карты изменились во время синхронизации. Повторите попытку.');
       }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(reconciled));
+      persistCards(reconciled);
       state.cards = reconciled;
       await window.KartochkaCloud.upsertCards(reconciled);
       localStorage.setItem(CLOUD_USER_KEY, state.user.id);
@@ -282,9 +294,9 @@
     try {
       // cloud.js first stores a verified recovery copy. If it cannot, stay signed in.
       await window.KartochkaCloud.signOut();
-      localStorage.removeItem(STORAGE_KEY);
       state.user = null;
       state.cards = [];
+      saveCards(false);
       localStorage.removeItem(CLOUD_USER_KEY);
       renderStack();
       renderGrid();
@@ -850,7 +862,7 @@
     try {
       // Queue the tombstone before changing the active wallet; roll it back on failure.
       if (hasCloud) rememberCloudDeletion(card.id);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(remainingCards));
+      persistCards(remainingCards);
     } catch (_) {
       if (hasCloud) {
         try {
@@ -1079,7 +1091,9 @@
     });
   }
 
-  function init() {
+  async function init() {
+    await window.KartochkaRecovery?.ready;
+    state.cards = loadCards();
     applyTheme(state.theme);
     renderStack();
     renderGrid();
