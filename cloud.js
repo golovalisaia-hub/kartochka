@@ -3,6 +3,7 @@
 
   const SESSION_KEY = 'kartochka.supabase-session.v1';
   const CARDS_KEY = 'kartochka.cards.v1';
+  const RECOVERY_KEY = 'kartochka.cards.recovery.v1';
   const CLOUD_USER_KEY = 'kartochka.cloud-user.v1';
   const USER_CACHE_PREFIX = 'kartochka.user-cache.v1.';
   const BASELINE_PREFIX = 'kartochka.sync-baseline.v1.';
@@ -134,7 +135,11 @@
         markSyncIssue();
         return session; // Recovery copy failed: retain the wallet and identity instead of deleting cards.
       }
-      try { localStorage.setItem(CARDS_KEY, '[]'); } catch (_) {}
+      try {
+        localStorage.setItem(CARDS_KEY, '[]');
+        localStorage.setItem(RECOVERY_KEY, '[]');
+        window.KartochkaRecovery?.save?.([]);
+      } catch (_) {}
       storeSession(null);
       return null;
     }

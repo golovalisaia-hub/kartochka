@@ -2,6 +2,7 @@
 (() => {
   'use strict';
   const KEY = 'kartochka.cards.v1';
+  const RECOVERY_KEY = 'kartochka.cards.recovery.v1';
   const TYPE = 'kartochka-backup';
   const MAX_FILE = 12 * 1024 * 1024;
   const MAX_IMAGE = 3 * 1024 * 1024;
@@ -102,7 +103,11 @@
         const message = `Добавить ${additions.length} карт из файла? Существующие ${current.length} карт останутся без изменений.${online ? ' Включённая синхронизация может добавить их и в облачный аккаунт.' : ''}`;
         if (!window.confirm(message)) { status.textContent = 'Восстановление отменено. Карты не изменены.'; return; }
         // One atomic write; a storage/quota error leaves all original cards unchanged.
-        localStorage.setItem(KEY, JSON.stringify([...current, ...additions]));
+        const restored = [...current, ...additions];
+        const json = JSON.stringify(restored);
+        localStorage.setItem(KEY, json);
+        try { localStorage.setItem(RECOVERY_KEY, json); } catch (_) {}
+        window.KartochkaRecovery?.save?.(restored);
         status.textContent = `Добавлено ${additions.length} карт. Перезагружаем приложение…`;
         window.location.reload();
       } catch (error) { status.textContent = `Восстановление не выполнено: ${error.message}`; }

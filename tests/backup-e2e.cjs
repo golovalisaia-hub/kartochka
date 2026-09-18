@@ -55,7 +55,11 @@ let browser;
   await waitStatus('неподдерживаемое изображение');
   assert.equal((await stored()).length,1);
   console.log('PASS Unsupported image payload is rejected before writing');
-  await page.evaluate(()=>localStorage.removeItem('kartochka.cards.v1'));
+  await page.evaluate(async()=>{
+    localStorage.removeItem('kartochka.cards.v1');
+    localStorage.removeItem('kartochka.cards.recovery.v1');
+    await new Promise(resolve=>{const request=indexedDB.deleteDatabase('kartochka-recovery-v1');request.onsuccess=request.onerror=request.onblocked=resolve;});
+  });
   await page.reload({waitUntil:'load'});
   await page.locator('#backupPanel').waitFor({state:'attached'});
   await page.locator('.nav-item[data-view=design]').click();
