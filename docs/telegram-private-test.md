@@ -23,7 +23,7 @@
 
 ## Настройка Telegram
 
-После публикации функций нужно один раз вызвать `POST /functions/v1/telegram-setup` с заголовком `X-Telegram-Bot-Api-Secret-Token`, равным уже сохранённому `TELEGRAM_WEBHOOK_SECRET`. Функция сама устанавливает webhook, `/start`, кнопку меню и возвращает только обезличенный статус webhook.
+После публикации функции нужно один раз вызвать `POST /functions/v1/telegram` с JSON `{"action":"setup"}` и заголовком `X-Telegram-Bot-Api-Secret-Token`, равным сохранённому `TELEGRAM_WEBHOOK_SECRET`. Функция сама устанавливает webhook, `/start`, кнопку меню и возвращает только обезличенный статус webhook.
 
 Если BotFather ещё не настроен вручную, достаточно открыть `@BotFather`, выбрать `@KartochkaWalletBot` и задать:
 

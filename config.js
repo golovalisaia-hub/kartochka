@@ -1,7 +1,7 @@
 /* Public Supabase config: publishable key is safe in a browser. NEVER use service_role / secret here. */
 window.KARTOCHKA_CONFIG = {
-  supabaseUrl: 'https://cwiechastoocixpnobuy.supabase.co',
-  supabaseAnonKey: 'sb_publishable_QqSAzVdGEW6_iDXoYxbOyw_--W22GiA'
+  supabaseUrl: 'https://qtyqdlkmfojbebgxcqxl.supabase.co',
+  supabaseAnonKey: 'sb_publishable_eyYpf8NHcvSMgy15sNG_bg_FgaRnlUe'
 };
 
 /* Photo filename is only a hint; never overwrite a recognized or typed store. */

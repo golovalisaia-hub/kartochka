@@ -159,9 +159,9 @@
   }
   async function loginWithTelegram(initData) {
     if (typeof initData !== 'string' || !initData) throw new Error('Telegram не передал данные авторизации.');
-    const result = await request('/functions/v1/telegram-login', {
+    const result = await request('/functions/v1/telegram', {
       method: 'POST',
-      body: JSON.stringify({ initData })
+      body: JSON.stringify({ action: 'login', initData })
     });
     if (!result?.token_hash) throw new Error('Telegram-вход не подтверждён сервером.');
     const session = await request('/auth/v1/verify', {

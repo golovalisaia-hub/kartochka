@@ -70,11 +70,12 @@ const server = http.createServer((request, response) => {
     };
   });
 
-  await page.route('https://cwiechastoocixpnobuy.supabase.co/**', async route => {
+  await page.route('https://qtyqdlkmfojbebgxcqxl.supabase.co/**', async route => {
     const request = route.request();
     const url = new URL(request.url());
     requests.push({ method: request.method(), path: url.pathname + url.search });
-    if (url.pathname === '/functions/v1/telegram-login') {
+    if (url.pathname === '/functions/v1/telegram' && request.method() === 'POST' &&
+        request.postDataJSON()?.action === 'login') {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ token_hash: 'test-token-hash', type: 'magiclink' }) });
       return;
     }

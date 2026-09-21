@@ -19,3 +19,6 @@ verify_jwt = true
 # TELEGRAM_WEBHOOK_SECRET header and never accepts a URL from the caller.
 [functions.telegram-setup]
 verify_jwt = false
+
+[functions.telegram]
+verify_jwt = false
