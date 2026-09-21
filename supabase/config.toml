@@ -14,3 +14,8 @@ verify_jwt = true
 
 [functions.create-premium-invoice]
 verify_jwt = true
+
+# Idempotent bot configuration. The handler additionally requires the existing
+# TELEGRAM_WEBHOOK_SECRET header and never accepts a URL from the caller.
+[functions.telegram-setup]
+verify_jwt = false

@@ -1,7 +1,7 @@
 name: Card wallet browser QA
 on:
   push:
-    branches: [main, feature/email-password-cloud, fix/cloud-conflicts-and-status, fix/magic-link-fallback]
+    branches: [main, feature/email-password-cloud, fix/cloud-conflicts-and-status, fix/magic-link-fallback, fix/telegram-private-test]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -40,3 +40,7 @@ jobs:
         run: node tests/cloud-conflict-e2e.cjs
       - name: Atomic two-device revision and deletion regression
         run: node tests/atomic-sync.cjs
+      - name: Telegram authentication, privacy and payment shutdown
+        run: node tests/telegram-private-test.cjs
+      - name: Telegram Mini App browser flow
+        run: node tests/telegram-browser-e2e.cjs

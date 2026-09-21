@@ -70,7 +70,18 @@
     const text = await response.text();
     return text ? JSON.parse(text) : null;
   }
-  const getRows = () => api('/rest/v1/cards?select=*&order=last_used.desc');
+  function telegramAccount() {
+    const user = legacy.user?.();
+    return Boolean(
+      window.KartochkaTelegram?.active?.() &&
+      user?.user_metadata?.telegram_id
+    );
+  }
+  const cardTable = () => telegramAccount() ? 'telegram_test_cards' : 'cards';
+  const mutationRpc = () => telegramAccount()
+    ? 'apply_telegram_test_card_change'
+    : 'apply_card_change';
+  const getRows = () => api(`/rest/v1/${cardTable()}?select=*&order=last_used.desc`);
   const cardFromRow = row => ({
     id: row.id, store: row.store, number: row.number,
     a: row.color_a, b: row.color_b, text: row.text_color || '#fff',
@@ -116,7 +127,7 @@
     return [...keys].every(id => a[id] === b[id]);
   }
   async function mutation(id, expected, remove, card = null) {
-    return api('/rest/v1/rpc/apply_card_change', {
+    return api(`/rest/v1/rpc/${mutationRpc()}`, {
       method: 'POST', body: JSON.stringify({
         p_card_id: id, p_expected_revision: expected,
         p_delete: remove, p_card: card ? cardToPayload(card) : null
@@ -129,6 +140,9 @@
       const previous = localStorage.getItem(OWNER_KEY);
       if (previous && previous !== uid && cards().length) {
         throw new Error('Карты принадлежат другому аккаунту. Сохраните резервную копию перед сменой аккаунта.');
+      }
+      if (telegramAccount() && !previous && cards().length) {
+        throw new Error('Найдены локальные карты без владельца. Сохраните резервную копию и очистите их перед Telegram-тестом.');
       }
       const serverRows = await getRows();
       const server = rowsById(serverRows);

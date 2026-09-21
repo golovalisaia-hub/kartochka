@@ -93,12 +93,30 @@
         <div class="theme-preview"><div class="mini-wallet"><span>К</span><small>КАРТОЧКА</small></div></div>
         <div class="theme-list" id="themeList"></div>
       </section>
+
+      <section class="view" id="catalogView" aria-labelledby="catalogTitle">
+        <div class="subpage-head">
+          <button class="icon-button back-button" data-go="wallet" aria-label="Назад"><svg><use href="#i-back"/></svg></button>
+          <div><p class="eyebrow">Общий каталог</p><h1 id="catalogTitle">Каталог карт</h1></div>
+          <span class="head-spacer"></span>
+        </div>
+        <div class="catalog-banner">
+          <span class="catalog-badge">ЗАКРЫТЫЙ ТЕСТ</span>
+          <h2>Безопасный каталог</h2>
+          <p>Здесь появятся только проверенные тестовые карты. Личные карты и реальные номера пользователей сюда не попадают.</p>
+        </div>
+        <div class="catalog-list" id="catalogList">
+          <div class="catalog-empty"><strong>Каталог пока пуст</strong><span>Публикация реальных карт и оплаты отключена.</span></div>
+        </div>
+        <button class="secondary-button wide catalog-payment" id="catalogPayment" type="button" disabled>Покупки отключены на время теста</button>
+      </section>
     </main>
 
     <nav class="bottom-nav" aria-label="Навигация">
       <button class="nav-item active" data-view="wallet"><svg><use href="#i-wallet"/></svg><span>Портмоне</span></button>
       <button class="nav-item" data-view="all"><svg><use href="#i-grid"/></svg><span>Все карты</span></button>
       <button class="nav-item" data-view="design"><svg><use href="#i-sparkle"/></svg><span>Дизайн</span></button>
+      <button class="nav-item" data-view="catalog"><svg><use href="#i-grid"/></svg><span>Каталог</span></button>
     </nav>
   </div>
 
@@ -186,6 +204,11 @@
         <p>Укажите адрес проекта и публичный ключ Supabase в файле <code>config.js</code>.</p>
       </div>
 
+      <div id="telegramAuthPanel" class="auth-message telegram-auth-panel" hidden>
+        <strong>Вход через Telegram</strong>
+        <p>Сеанс подтверждается подписью Telegram. Карты этого тестового аккаунта изолированы от других пользователей.</p>
+      </div>
+
       <form id="emailForm" class="auth-form">
         <p class="auth-copy">Введите почту. Мы отправим одноразовый шестизначный код — пароль не нужен.</p>
         <label class="form-field"><span>Электронная почта</span><input id="authEmail" type="email" autocomplete="email" inputmode="email" placeholder="name@example.com" required></label>
@@ -217,6 +240,7 @@
   <script src="local-recovery.js" defer></script>
   <script src="cloud.js" defer></script>
   <script src="cloud-atomic.js" defer></script>
+  <script src="telegram-mini-app.js" defer></script>
   <script src="scanner-enhance.js" defer></script>
   <script src="app.js" defer></script>
   <script src="store-directory.js" defer></script>

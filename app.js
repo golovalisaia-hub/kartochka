@@ -91,6 +91,10 @@
     return Boolean(window.KartochkaCloud?.configured?.());
   }
 
+  function telegramMode() {
+    return Boolean(window.KartochkaTelegram?.active?.());
+  }
+
   function cloudErrorMessage(error) {
     const value = String(error?.message || error || '');
     if (/invalid login credentials|token has expired|session/i.test(value)) return 'Сессия истекла. Войдите снова.';
@@ -125,7 +129,7 @@
     status.querySelector('span').textContent = state.cloudBusy
       ? 'Синхронизация…'
       : signedIn
-        ? `Сохранено в облаке · ${state.user.email || 'аккаунт'}`
+        ? `Сохранено в облаке · ${telegramMode() ? window.KartochkaTelegram.displayName() : (state.user.email || 'аккаунт')}`
         : configured
           ? 'Войдите, чтобы сохранять карты в облаке'
           : 'Карты хранятся только на этом устройстве';
@@ -133,12 +137,16 @@
 
   function showAuthStep(step) {
     const configured = cloudAvailable();
+    const telegram = telegramMode();
     $('#authUnavailable').hidden = configured;
-    $('#emailForm').hidden = !configured || step !== 'email';
-    $('#codeForm').hidden = !configured || step !== 'code';
+    $('#telegramAuthPanel').hidden = !configured || !telegram || step === 'account';
+    $('#emailForm').hidden = !configured || telegram || step !== 'email';
+    $('#codeForm').hidden = !configured || telegram || step !== 'code';
     $('#accountPanel').hidden = !configured || step !== 'account';
     if (step === 'account' && state.user) {
-      $('#accountEmail').textContent = state.user.email || 'Аккаунт';
+      $('#accountEmail').textContent = telegram
+        ? window.KartochkaTelegram.displayName()
+        : (state.user.email || 'Аккаунт');
       $('#accountSyncText').textContent = state.cloudBusy ? 'Синхронизация…' : 'Карты синхронизированы с облаком';
     }
   }
@@ -147,7 +155,7 @@
     setAuthError();
     showAuthStep(state.user ? 'account' : 'email');
     showOverlay('#authOverlay');
-    if (!state.user && cloudAvailable()) setTimeout(() => $('#authEmail').focus(), 200);
+    if (!state.user && cloudAvailable() && !telegramMode()) setTimeout(() => $('#authEmail').focus(), 200);
   }
 
   function queueCloudSync() {
@@ -234,6 +242,8 @@
     updateCloudUI();
     if (!cloudAvailable()) return;
     try {
+      await window.KartochkaTelegram?.ready;
+      if (telegramMode()) await window.KartochkaTelegram.authenticate();
       const session = await window.KartochkaCloud.validSession();
       state.user = session?.user || null;
       if (!state.user && localStorage.getItem(CLOUD_USER_KEY)) {
@@ -245,9 +255,13 @@
       }
       updateCloudUI();
       if (state.user) await syncWithCloud({ quiet: true });
-    } catch (_) {
+    } catch (error) {
       state.user = null;
       updateCloudUI();
+      if (telegramMode()) {
+        setAuthError(cloudErrorMessage(error));
+        showAuthStep('email');
+      }
     }
   }
 

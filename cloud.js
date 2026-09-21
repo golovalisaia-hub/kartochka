@@ -157,6 +157,21 @@
     lastObserved = null;
     return session.user;
   }
+  async function loginWithTelegram(initData) {
+    if (typeof initData !== 'string' || !initData) throw new Error('Telegram не передал данные авторизации.');
+    const result = await request('/functions/v1/telegram-login', {
+      method: 'POST',
+      body: JSON.stringify({ initData })
+    });
+    if (!result?.token_hash) throw new Error('Telegram-вход не подтверждён сервером.');
+    const session = await request('/auth/v1/verify', {
+      method: 'POST',
+      body: JSON.stringify({ token_hash: result.token_hash, type: result.type || 'magiclink' })
+    });
+    storeSession(session);
+    lastObserved = null;
+    return session.user;
+  }
   async function signOut() {
     const session = readSession();
     if (session?.user?.id && !cacheCards(session.user.id)) {
@@ -315,7 +330,7 @@
   }
 
   window.KartochkaCloud = {
-    configured, user, validSession, sendCode, verifyCode, signOut,
+    configured, user, validSession, sendCode, verifyCode, loginWithTelegram, signOut,
     listCards, upsertCards, deleteCard
   };
 })();
