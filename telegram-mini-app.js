@@ -7,11 +7,16 @@
 
   function loadTelegramSdk() {
     if (window.Telegram?.WebApp || document.querySelector('script[data-telegram-sdk]')) return;
-    const script = document.createElement('script');
-    script.async = true;
-    script.dataset.telegramSdk = '1';
-    script.src = 'https://telegram.org/js/telegram-web-app.js?59';
-    document.head.append(script);
+    const install = () => {
+      if (window.Telegram?.WebApp || document.querySelector('script[data-telegram-sdk]')) return;
+      const script = document.createElement('script');
+      script.async = true;
+      script.dataset.telegramSdk = '1';
+      script.src = 'https://telegram.org/js/telegram-web-app.js?59';
+      document.head.append(script);
+    };
+    if (document.readyState === 'complete') install();
+    else window.addEventListener('load', install, { once: true });
   }
 
   function findTelegram() {
@@ -25,7 +30,7 @@
 
   async function detect() {
     loadTelegramSdk();
-    for (let attempt = 0; attempt < 60; attempt += 1) {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
       if (findTelegram()) break;
       await new Promise(resolve => setTimeout(resolve, 50));
     }
