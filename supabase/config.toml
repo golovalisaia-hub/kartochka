@@ -1,0 +1,16 @@
+# Telegram initData is verified inside telegram-login; do not require a user JWT
+# before the user's first login. No anonymous access to wallet tables is granted.
+[functions.telegram-login]
+verify_jwt = false
+
+# Telegram delivers webhook requests without Supabase JWTs. The handler MUST
+# verify X-Telegram-Bot-Api-Secret-Token before processing any update.
+[functions.telegram-webhook]
+verify_jwt = false
+
+# A current Supabase session is required for these authenticated operations.
+[functions.telegram-link]
+verify_jwt = true
+
+[functions.create-premium-invoice]
+verify_jwt = true
