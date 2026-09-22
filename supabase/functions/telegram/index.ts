@@ -38,10 +38,10 @@ async function appLaunchOptions(){
  *
  *   sendAnimation  1. TELEGRAM_WELCOME_ANIMATION_FILE_ID — GIF/MP4 already uploaded to this bot
  *                  2. TELEGRAM_WELCOME_ANIMATION_URL     — public HTTPS .gif or .mp4
- *                  3. <app>/welcome.mp4, <app>/welcome.gif — just drop the file in the repo
+ *                  3. <app>/assets/branding/welcome.gif|.mp4, or welcome.mp4|.gif at the root
  *   sendPhoto      4. TELEGRAM_WELCOME_PHOTO_FILE_ID
  *                  5. TELEGRAM_WELCOME_PHOTO_URL
- *                  6. <app>/welcome.png
+ *                  6. <app>/assets/branding/welcome.png, or welcome.png at the root
  *
  * With none of them available the welcome is sent as plain text. Telegram renders an
  * animation at its own aspect ratio, so the file is passed through untouched and never
@@ -60,7 +60,11 @@ function coverCandidates(appUrl){
   const photoUrl=Deno.env.get('TELEGRAM_WELCOME_PHOTO_URL')||'';
   if(/^https:\/\//i.test(photoUrl))push('sendPhoto',photoUrl);
   if(/^https:\/\//i.test(appUrl)){
-    for(const [method,name] of [['sendAnimation','welcome.mp4'],['sendAnimation','welcome.gif'],['sendPhoto','welcome.png']]){
+    for(const [method,name] of [
+      ['sendAnimation','assets/branding/welcome.gif'],['sendAnimation','assets/branding/welcome.mp4'],
+      ['sendAnimation','welcome.mp4'],['sendAnimation','welcome.gif'],
+      ['sendPhoto','assets/branding/welcome.png'],['sendPhoto','welcome.png']
+    ]){
       try{push(method,new URL(name,appUrl).href)}catch(_){}
     }
   }
@@ -86,11 +90,68 @@ async function sendWelcomeCover(chatId,appUrl,caption,replyMarkup){
  * The picture on that card is NOT settable through the Bot API — only BotFather's
  * /setdescriptionpic can change it, so it is left alone here and documented instead.
  */
-const BOT_DESCRIPTION='«Карточка» — все скидочные карты в одном месте.\n\n'
-  +'Храните карты любимых магазинов, быстро находите нужную и показывайте QR-код или штрихкод прямо на кассе. '
-  +'Добавляйте карты по фотографии или вручную, открывайте недавно использованные карты за секунды.\n\n'
-  +'Всё внутри Telegram.';
-const BOT_SHORT_DESCRIPTION='Все скидочные карты в одном месте. Штрихкод для кассы — за одно нажатие.';
+const BOT_DESCRIPTION='Карточка — твой цифровой кошелёк для скидочных карт.\n\n'
+  +'Добавляй карты магазинов по фотографии или вручную, быстро находи нужную и показывай штрихкод на кассе.\n\n'
+  +'Настрой быстрый доступ и открывай последние карты за секунды.';
+const BOT_SHORT_DESCRIPTION='Все скидочные карты в одном месте. Открывай нужную карту прямо в Telegram.';
+
+/*
+ * The bot's own profile photo (the round avatar).
+ *
+ * The Bot API historically has no method for a bot to change its own avatar — that is
+ * BotFather's Edit Botpic. Rather than guess from documentation we cannot reach, this probes
+ * the live API: an unknown method answers "method not found", while an existing one complains
+ * about the missing argument. The probe sends no photo, so it can never change the avatar by
+ * accident. `{"action":"brand"}` reports the verdict and, where the method does exist and a
+ * source is configured, actually uploads the picture.
+ */
+const AVATAR_METHODS=['setMyProfilePhoto','setMyPhoto'];
+async function probeAvatarMethod(){
+  for(const method of AVATAR_METHODS){
+    const probe=await tryBot(method,{});
+    // A missing-argument complaint proves the method exists on this Bot API version.
+    if(probe.ok||!/method not found|unsupported|not supported/i.test(probe.description)){
+      return{method,exists:true,detail:probe.description||''};
+    }
+  }
+  return{method:null,exists:false,detail:'Bot API exposes no method for a bot to set its own avatar'};
+}
+function avatarSource(appUrl){
+  const explicit=Deno.env.get('TELEGRAM_AVATAR_URL')||'';
+  if(/^https:\/\//i.test(explicit))return explicit;
+  if(/^https:\/\//i.test(appUrl)){
+    try{return new URL('assets/branding/avatar-telegram.jpg',appUrl).href}catch(_){}
+  }
+  return '';
+}
+async function brand(){
+  const launch=await appLaunchOptions();
+  const probe=await probeAvatarMethod();
+  const source=avatarSource(launch.appUrl);
+  let applied=null;
+  if(probe.exists&&probe.method&&source){
+    const sent=await tryBot(probe.method,{photo:source});
+    applied={ok:sent.ok,detail:sent.ok?'':sent.description};
+  }
+  return{
+    avatar:{
+      api_method:probe.method,
+      api_can_set:probe.exists,
+      source_configured:Boolean(source),
+      source_reachable:source?(await tryFetchHead(source)):false,
+      applied,
+      botfather:'/mybots → @KartochkaWalletBot → Edit Bot → Edit Botpic → отправить квадратный PNG/JPG'
+    },
+    description:{published_by:'setMyDescription + setMyShortDescription через {"action":"setup"}'},
+    cover:{
+      chosen:coverChoice?{method:coverChoice.method,media:coverChoice.media}:null,
+      checked:coverChoice!==undefined
+    }
+  };
+}
+async function tryFetchHead(url){
+  try{const r=await fetch(url,{method:'GET',headers:{accept:'image/*'}});return r.ok}catch(_){return false}
+}
 
 // Deep link straight to the wallet: no welcome, no tour, just a way in.
 async function sendQuickLaunch(chatId){
@@ -150,6 +211,10 @@ Deno.serve(async r=>{
     if(b.action==='diagnose'){
       if(!secret(r))return J({error:'Unauthorized'},401,h);
       return J(await diagnose(),200,h);
+    }
+    if(b.action==='brand'){
+      if(!secret(r))return J({error:'Unauthorized'},401,h);
+      return J(await brand(),200,h);
     }
     if(b.action==='invoice')return J({error:'Real payments are disabled during the closed Telegram test',payment_mode:'disabled'},403,h);
     if(b.update||b.message||b.callback_query||b.pre_checkout_query){

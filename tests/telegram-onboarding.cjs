@@ -49,7 +49,7 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
     assert(buttons.some(button => button.callback_data === `kartochka:${section}`), section);
   }
   // Every capability listed must exist in the app today.
-  for (const promise of [/скидочные карты/i, /фотографии/i, /найти/i, /штрихкод/i, /последние открытые/i, /системными функциями/i]) {
+  for (const promise of [/скидочные карты/i, /фотографии/i, /находить нужную карту/i, /штрихкод/i, /недавно открытые/i, /функции смартфона/i]) {
     assert.match(main.text, promise);
   }
   assert.doesNotMatch(main.text, /SGX|Planner/i, 'no reference material may leak into our copy');
@@ -127,6 +127,12 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
   let server = null;
   const calls = [];
   let coverWorks = false;      // whether Telegram accepts the welcome cover media
+  const KNOWN_METHODS = new Set([
+    'getMe', 'getWebhookInfo', 'setWebhook', 'setMyCommands', 'setMyDescription',
+    'setMyShortDescription', 'setChatMenuButton', 'sendMessage', 'sendPhoto', 'sendAnimation',
+    'editMessageText', 'editMessageCaption', 'answerCallbackQuery', 'answerPreCheckoutQuery',
+    'getChatMenuButton'
+  ]);
   let editResult = { ok: true };
   const env = {
     SUPABASE_URL: 'https://test-project.supabase.co',
@@ -160,6 +166,11 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
       }
       if ((method === 'editMessageText' || method === 'editMessageCaption') && !editResult.ok) {
         return Response.json({ ok: false, description: editResult.description }, { status: 400 });
+      }
+      // Telegram answers an unknown method with "method not found". Today no Bot API method
+      // lets a bot change its own avatar, so the probe must see exactly that.
+      if (!KNOWN_METHODS.has(method)) {
+        return Response.json({ ok: false, description: 'Not Found: method not found' }, { status: 404 });
       }
       return Response.json({ ok: true, result: true });
     }
@@ -199,7 +210,7 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
 
       // The caption and the grid ride along with the media, not only with the text message.
       const animation = calls.find(item => item.method === 'sendAnimation');
-      assert.match(animation.payload.animation, /welcome\.mp4$/, 'welcome.mp4 in the repo is enough');
+      assert.match(animation.payload.animation, /assets\/branding\/welcome\.gif$/, 'the branding folder is looked at first');
       assert.match(animation.payload.caption, /все скидочные карты в одном месте/);
       assert.ok(animation.payload.caption.length <= 1024, 'caption must fit under the animation');
       assert.deepEqual(animation.payload.reply_markup.inline_keyboard.map(row => row.length), [1, 1, 2, 2]);
@@ -347,11 +358,40 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
       }
       // The card Telegram shows before Start is published through the documented methods.
       const description = calls.find(item => item.method === 'setMyDescription').payload.description;
-      assert.match(description, /все скидочные карты в одном месте/i);
+      assert.match(description, /цифровой кошелёк для скидочных карт/i);
       assert.ok(description.length <= 512, 'setMyDescription caps at 512 characters');
       const short = calls.find(item => item.method === 'setMyShortDescription').payload.short_description;
+      assert.match(short, /Все скидочные карты в одном месте/i);
       assert.ok(short.length <= 120, 'setMyShortDescription caps at 120 characters');
       assert.doesNotMatch(description + short, /SGX|Planner/i);
+    });
+
+    await check('the avatar probe never uploads anything by accident', async () => {
+      reset();
+      const response = await dispatch({ action: 'brand' });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      // This Bot API mock answers "method not found", which is the real answer today.
+      assert.equal(body.avatar.api_can_set, false);
+      assert.match(body.avatar.botfather, /Edit Botpic/);
+      // The probe must never carry a photo: it may not change the avatar as a side effect.
+      for (const call of calls.filter(item => /^setMy(ProfilePhoto|Photo)$/.test(item.method))) {
+        assert.equal(Object.keys(call.payload).length, 0, `${call.method} probe must send no photo`);
+      }
+      assert.equal(body.avatar.applied, null, 'nothing is uploaded while the API cannot do it');
+    });
+
+    await check('the brand report names the configured avatar source', async () => {
+      reset();
+      const body = await (await dispatch({ action: 'brand' })).json();
+      assert.equal(body.avatar.source_configured, true, 'a repo path is a valid source');
+      assert.equal(typeof body.avatar.source_reachable, 'boolean');
+    });
+
+    await check('brand and diagnose need the webhook secret', async () => {
+      for (const action of ['brand', 'diagnose']) {
+        assert.equal((await dispatch({ action }, 'incorrect')).status, 401, action);
+      }
     });
 
     await check('payments stay switched off', async () => {

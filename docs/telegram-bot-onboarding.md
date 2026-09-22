@@ -39,6 +39,31 @@
 одним нажатием прямо с приветствия. Кнопка `kartochka:features` из старых сообщений открывает
 тот же главный экран.
 
+## Аватар бота
+
+Аватар — это **не** картинка блока «Что умеет этот бот?». Это два разных изображения.
+
+Метода Bot API, которым бот менял бы себе аватар, исторически нет: это делает только
+BotFather. Чтобы не гадать по документации, в функцию встроена безопасная проба живого API:
+
+```
+POST /functions/v1/telegram
+X-Telegram-Bot-Api-Secret-Token: <TELEGRAM_WEBHOOK_SECRET>
+{"action":"brand"}
+```
+
+Проба вызывает предполагаемые методы **без файла**, поэтому сменить аватар случайно не может.
+Ответ `avatar.api_can_set` — фактический вердикт актуального Bot API. Если когда-нибудь метод
+появится и задан источник, то же действие загрузит аватар и вернёт результат в `avatar.applied`.
+
+Пока метода нет, порядок такой:
+
+1. `@BotFather` → `/mybots` → `@KartochkaWalletBot` → `Edit Bot` → `Edit Botpic`.
+2. Отправить `assets/branding/avatar-telegram.jpg` (квадратный JPG).
+
+Telegram обрезает аватар в круг. Логотип и серебристое кольцо должны умещаться в круг,
+вписанный в квадрат, иначе углы срежутся — запас по краям обязателен.
+
 ## Системная карточка до Start
 
 `{"action":"setup"}` публикует её документированными методами Bot API:
@@ -92,13 +117,14 @@
 | 2 | `sendAnimation` | `TELEGRAM_WELCOME_ANIMATION_URL` (публичный `.gif` или `.mp4`) |
 | 3 | `sendPhoto` | `TELEGRAM_WELCOME_PHOTO_FILE_ID` |
 | 4 | `sendPhoto` | `TELEGRAM_WELCOME_PHOTO_URL` |
-| 5 | `sendAnimation` | `welcome.mp4` в корне репозитория |
-| 6 | `sendAnimation` | `welcome.gif` в корне репозитория |
-| 7 | `sendPhoto` | `welcome.png` в корне репозитория |
+| 5 | `sendAnimation` | `assets/branding/welcome.gif` |
+| 6 | `sendAnimation` | `assets/branding/welcome.mp4` |
+| 7 | `sendAnimation` | `welcome.mp4`, `welcome.gif` в корне репозитория |
+| 8 | `sendPhoto` | `assets/branding/welcome.png`, `welcome.png` |
 
-**Самый простой вариант: положите свой файл в корень репозитория под именем `welcome.mp4`
-(или `welcome.gif`, или `welcome.png`).** Больше ничего настраивать не нужно — адрес
-получается сам из адреса приложения.
+**Самый простой вариант: положите свою анимацию в `assets/branding/welcome.gif`.**
+Больше ничего настраивать не нужно — адрес получается сам из адреса приложения.
+Требования к файлам — в [`assets/branding/README.md`](../assets/branding/README.md).
 
 Telegram показывает анимацию в её собственных пропорциях; файл передаётся как есть, ничего не
 пережимается и не обрезается. Ограничения Telegram: до 10 МБ по URL, сумма сторон не больше
