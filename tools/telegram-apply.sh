@@ -14,7 +14,9 @@ set -uo pipefail
 
 TOKEN="${TELEGRAM_BOT_TOKEN:-}"
 APP_URL="${TELEGRAM_WEB_APP_URL:-}"
-API="https://api.telegram.org/bot${TOKEN}"
+# Адрес API вынесен, чтобы скрипт можно было прогнать против локального мока в тестах.
+API_BASE="${TELEGRAM_API_BASE:-https://api.telegram.org}"
+API="${API_BASE}/bot${TOKEN}"
 
 if [ -z "$TOKEN" ]; then
   echo "Не задан TELEGRAM_BOT_TOKEN." >&2
@@ -32,7 +34,11 @@ import("./supabase/functions/_shared/bot-onboarding.ts").then(m => {
     commands: m.BOT_COMMANDS
   }));
 }).catch(e => { console.error(e); process.exit(1); });
-')" || { echo "Не удалось прочитать тексты из supabase/functions/_shared/bot-onboarding.ts" >&2; exit 1; }
+')" || {
+  echo "Не удалось прочитать тексты из supabase/functions/_shared/bot-onboarding.ts." >&2
+  echo "Чаще всего причина — старый Node: нужен Node 22 или новее (node --version)." >&2
+  exit 1
+}
 
 ok_count=0
 fail_count=0

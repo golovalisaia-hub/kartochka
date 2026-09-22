@@ -48,5 +48,7 @@ jobs:
         run: node tests/telegram-quick-mode.cjs
       - name: Telegram account isolation and cross-device open sync
         run: node tests/telegram-account-privacy.cjs
+      - name: Bot branding script against a fake Bot API
+        run: node tests/telegram-apply-script.cjs
       - name: Telegram bot onboarding and navigation
         run: node tests/telegram-onboarding.cjs
