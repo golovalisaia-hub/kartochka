@@ -129,7 +129,7 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
   let coverWorks = false;      // whether Telegram accepts the welcome cover media
   const KNOWN_METHODS = new Set([
     'getMe', 'getWebhookInfo', 'setWebhook', 'setMyCommands', 'setMyDescription',
-    'setMyShortDescription', 'setChatMenuButton', 'sendMessage', 'sendPhoto', 'sendAnimation',
+    'setMyShortDescription', 'setMyName', 'setChatMenuButton', 'sendMessage', 'sendPhoto', 'sendAnimation',
     'editMessageText', 'editMessageCaption', 'answerCallbackQuery', 'answerPreCheckoutQuery',
     'getChatMenuButton'
   ]);
@@ -357,6 +357,7 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
         assert.ok(commands.includes(command), `/${command} must be registered`);
       }
       // The card Telegram shows before Start is published through the documented methods.
+      assert.equal(calls.find(item => item.method === 'setMyName').payload.name, 'Карточка');
       const description = calls.find(item => item.method === 'setMyDescription').payload.description;
       assert.match(description, /цифровой кошелёк для скидочных карт/i);
       assert.ok(description.length <= 512, 'setMyDescription caps at 512 characters');

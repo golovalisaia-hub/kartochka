@@ -1,5 +1,5 @@
 import { inspectWebAppUrl } from '../_shared/telegram.ts';
-import { onboardingAction, onboardingPage } from '../_shared/bot-onboarding.ts';
+import { onboardingAction, onboardingPage, BOT_NAME, BOT_DESCRIPTION, BOT_SHORT_DESCRIPTION, BOT_COMMANDS } from '../_shared/bot-onboarding.ts';
 const U=Deno.env.get('SUPABASE_URL')||'',K=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||'',E=new TextEncoder();
 const C=r=>{const o=r.headers.get('origin')||'',u=Deno.env.get('TELEGRAM_WEB_APP_URL')||'';let a='*';try{const x=new URL(u).origin;a=o===x||/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(o)?o:x}catch(_){if(o)a=o}return{'Content-Type':'application/json; charset=utf-8','Access-Control-Allow-Origin':a,'Access-Control-Allow-Headers':'authorization, apikey, content-type, x-client-info','Access-Control-Allow-Methods':'POST, OPTIONS','Vary':'Origin'}};
 const J=(b,s=200,h={})=>new Response(JSON.stringify(b),{status:s,headers:{...h,'Content-Type':'application/json; charset=utf-8'}});
@@ -84,16 +84,6 @@ async function sendWelcomeCover(chatId,appUrl,caption,replyMarkup){
   coverCheckedAt=Date.now();
   return null;
 }
-/*
- * The card Telegram shows BEFORE the user presses Start ("Что умеет этот бот?").
- * setMyDescription accepts up to 512 characters and setMyShortDescription up to 120.
- * The picture on that card is NOT settable through the Bot API — only BotFather's
- * /setdescriptionpic can change it, so it is left alone here and documented instead.
- */
-const BOT_DESCRIPTION='Карточка — твой цифровой кошелёк для скидочных карт.\n\n'
-  +'Добавляй карты магазинов по фотографии или вручную, быстро находи нужную и показывай штрихкод на кассе.\n\n'
-  +'Настрой быстрый доступ и открывай последние карты за секунды.';
-const BOT_SHORT_DESCRIPTION='Все скидочные карты в одном месте. Открывай нужную карту прямо в Telegram.';
 
 /*
  * The bot's own profile photo (the round avatar).
@@ -210,7 +200,8 @@ async function showIntro(chatId,page,{messageId=null,hasPhoto=false,initial=fals
 }
 
 // Read-only diagnostics never return token values.
-async function setup(r){if(!secret(r))return J({error:'Unauthorized'},401);const w=Deno.env.get('TELEGRAM_WEB_APP_URL')||'';if(!/^https:\/\//i.test(w))throw Error('Telegram web app URL is missing');const health=await inspectWebAppUrl(w);if(!health.ok){const e=Error('WEB_APP_URL_UNAVAILABLE');e.reason=health.reason;e.hint=health.hint;throw e}const url=U.replace(/\/+$/,'')+'/functions/v1/telegram';await bot('setWebhook',{url,secret_token:Deno.env.get('TELEGRAM_WEBHOOK_SECRET'),allowed_updates:['message','callback_query','pre_checkout_query'],drop_pending_updates:false});await bot('setMyCommands',{commands:[{command:'start',description:'Знакомство с Карточкой'},{command:'menu',description:'Главное меню'},{command:'quick',description:'Быстрый доступ'},{command:'plans',description:'Тарифы и Premium'},{command:'support',description:'Поддержка'}]});
+async function setup(r){if(!secret(r))return J({error:'Unauthorized'},401);const w=Deno.env.get('TELEGRAM_WEB_APP_URL')||'';if(!/^https:\/\//i.test(w))throw Error('Telegram web app URL is missing');const health=await inspectWebAppUrl(w);if(!health.ok){const e=Error('WEB_APP_URL_UNAVAILABLE');e.reason=health.reason;e.hint=health.hint;throw e}const url=U.replace(/\/+$/,'')+'/functions/v1/telegram';await bot('setWebhook',{url,secret_token:Deno.env.get('TELEGRAM_WEBHOOK_SECRET'),allowed_updates:['message','callback_query','pre_checkout_query'],drop_pending_updates:false});await bot('setMyCommands',{commands:BOT_COMMANDS});
+  await bot('setMyName',{name:BOT_NAME});
   // Refuse silently is not an option: a failed description would leave the pre-Start card stale.
   await bot('setMyDescription',{description:BOT_DESCRIPTION});
   await bot('setMyShortDescription',{short_description:BOT_SHORT_DESCRIPTION});await bot('setChatMenuButton',{menu_button:{type:'web_app',text:'Открыть Карточку',web_app:{url:w}}});const x=await bot('getWebhookInfo',{});return{ok:true,webhook:{configured:x?.url===url,pending_update_count:Number(x?.pending_update_count||0),last_error_date:x?.last_error_date||null}}}

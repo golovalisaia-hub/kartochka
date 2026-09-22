@@ -7,6 +7,28 @@
 // any screen can be shown as a caption under the welcome picture without being truncated.
 const prefix = 'kartochka:';
 
+/*
+ * Единственный источник правды для оформления бота.
+ *
+ * Эти же значения использует и Edge Function, и скрипт tools/telegram-apply.sh, чтобы
+ * настройка из терминала не разошлась с тем, что публикует {"action":"setup"}.
+ * Лимиты Telegram: имя 64, короткое описание 120, описание 512 символов.
+ */
+export const BOT_NAME = 'Карточка';
+export const BOT_SHORT_DESCRIPTION =
+  'Все скидочные карты в одном месте. Открывай нужную карту прямо в Telegram.';
+export const BOT_DESCRIPTION =
+  'Карточка — твой цифровой кошелёк для скидочных карт.\n\n'
+  + 'Добавляй карты магазинов по фотографии или вручную, быстро находи нужную и показывай штрихкод на кассе.\n\n'
+  + 'Настрой быстрый доступ и открывай последние карты за секунды.';
+export const BOT_COMMANDS = [
+  { command: 'start', description: 'Знакомство с Карточкой' },
+  { command: 'menu', description: 'Главное меню' },
+  { command: 'quick', description: 'Быстрый доступ' },
+  { command: 'plans', description: 'Тарифы и Premium' },
+  { command: 'support', description: 'Поддержка' }
+];
+
 // `plans` is kept as an alias of `premium`: messages already sitting in users' chats carry
 // the old callback_data, and those buttons must keep working rather than silently failing.
 const PAGES = ['home', 'features', 'quick', 'backtap', 'action', 'android', 'premium', 'plans', 'support'];
