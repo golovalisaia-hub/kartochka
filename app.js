@@ -1121,7 +1121,6 @@
     state.activeCardId = id;
     renderStack();
     renderQuick();
-    renderQuick();
     renderGrid($('#cardSearch').value);
     // Still inside the user's tap: if the compact sheet is too short for a readable code,
     // ask Telegram for more room now rather than making the user press a second button.
