@@ -1,4 +1,4 @@
-import { jsonResponse, telegramApi } from '../_shared/telegram.ts';
+import { inspectWebAppUrl, jsonResponse, telegramApi } from '../_shared/telegram.ts';
 
 Deno.serve(async request => {
   if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
@@ -15,6 +15,18 @@ Deno.serve(async request => {
     if (!botToken || !expectedSecret || !/^https:\/\//i.test(webAppUrl) || !supabaseUrl) {
       throw new Error('Telegram setup is incomplete');
     }
+    // Refuse to point Telegram at a URL that answers with somebody else's login page:
+    // the button would open, for example, "Log in to Vercel" in a window titled «Карточка».
+    const health = await inspectWebAppUrl(webAppUrl);
+    if (!health.ok) {
+      return jsonResponse({
+        error: 'Telegram Mini App URL is not serving the app',
+        reason: health.reason,
+        hint: health.hint,
+        configured: false
+      }, 409);
+    }
+
     const webhookUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1/telegram-webhook`;
     await telegramApi(botToken, 'setWebhook', {
       url: webhookUrl,

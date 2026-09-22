@@ -1,4 +1,4 @@
-const CACHE = 'kartochka-v13-telegram-test';
+const CACHE = 'kartochka-v14-telegram-quick';
 const APP_SHELL = [
   './',
   './index.html',

@@ -193,12 +193,14 @@
       color_a: card.a, color_b: card.b, text_color: card.text || '#fff',
       last_used: Number(card.lastUsed || Date.now()), format: card.format || 'code_128',
       code_image: card.codeImage || null, updated_at: new Date().toISOString()
+      // last_opened_at is intentionally absent: only recordOpens writes open history.
     };
   }
   function fromRow(row) {
     return {
       id: row.id, store: row.store, number: row.number, a: row.color_a, b: row.color_b,
       text: row.text_color || '#fff', lastUsed: Number(row.last_used || 0),
+      openedAt: Number(row.last_opened_at || 0),
       format: row.format || 'code_128', codeImage: row.code_image || null
     };
   }
@@ -256,7 +258,11 @@
         }
         if (!onDevice) { result.push(onServer); continue; }
         if (remoteHashes[id] === localHashes[id]) {
-          result.push({ ...onServer, lastUsed: Math.max(onServer.lastUsed, onDevice.lastUsed) });
+          result.push({
+            ...onServer,
+            lastUsed: Math.max(onServer.lastUsed, onDevice.lastUsed),
+            openedAt: Math.max(Number(onServer.openedAt || 0), Number(onDevice.openedAt || 0))
+          });
           continue;
         }
         if (!base[id]) throw new Error(conflictMessage);
@@ -264,7 +270,11 @@
         const remoteEdited = remoteHashes[id] !== base[id];
         if (localEdited && remoteEdited) throw new Error(conflictMessage);
         const winner = localEdited ? onDevice : onServer;
-        result.push({ ...winner, lastUsed: Math.max(onDevice.lastUsed, onServer.lastUsed) + 1 });
+        result.push({
+          ...winner,
+          lastUsed: Math.max(onDevice.lastUsed, onServer.lastUsed) + 1,
+          openedAt: Math.max(Number(onDevice.openedAt || 0), Number(onServer.openedAt || 0))
+        });
       }
       lastObserved = { userId, hashes: remoteHashes };
       return result;

@@ -6,6 +6,7 @@
   const THEME_KEY = 'kartochka.wallet-theme.v1';
   const DEMO_CLEANUP_KEY = 'kartochka.demo-cleanup.v1';
   const CLOUD_USER_KEY = 'kartochka.cloud-user.v1';
+  const OPEN_QUEUE_KEY = 'kartochka.card-opens.queue.v1';
   const CLOUD_IDS_PREFIX = 'kartochka.cloud-ids.v1.';
   const CLOUD_DELETIONS_PREFIX = 'kartochka.cloud-deletions.v1.';
   const LEGACY_DEMO_NUMBERS = new Set(['2200000715238','2900635618427','7800037421956','4600001853120']);
@@ -49,8 +50,37 @@
     user: null,
     cloudTimer: null,
     cloudBusy: false,
-    pendingEmail: ''
+    pendingEmail: '',
+    mode: 'normal',
+    gateReason: '',
+    quickReturnView: null
   };
+
+  /*
+   * Card open history.
+   *
+   * The original `lastUsed` field was written both when a card was CREATED and when it was
+   * OPENED, so an old value is not proof that the user ever opened that card. Renaming it
+   * into open history would invent a history the app never recorded.
+   *
+   * The migration is therefore additive and lossless:
+   *   - `openedAt` (server column `last_opened_at`) counts ONLY real opens and starts empty;
+   *   - the old value is preserved as `legacyTouchedAt`, used only as a weak tiebreaker
+   *     between cards that have never been opened, and never presented as an open;
+   *   - `lastUsed` itself is left untouched so older clients and backups keep working.
+   */
+  function migrateCards(stored) {
+    let changed = false;
+    const cards = stored.map(card => {
+      if (card && typeof card === 'object' && 'openedAt' in card) return card;
+      changed = true;
+      return { ...card, openedAt: 0, legacyTouchedAt: Number(card?.lastUsed || 0) };
+    });
+    return { cards, changed };
+  }
+
+  const openedAtOf = card => Number(card?.openedAt || 0);
+  const legacyHintOf = card => Number(card?.legacyTouchedAt ?? card?.lastUsed ?? 0);
 
   function loadCards() {
     try {
@@ -66,10 +96,13 @@
       if (!localStorage.getItem(DEMO_CLEANUP_KEY)) {
         const cleaned = stored.filter(card => !LEGACY_DEMO_NUMBERS.has(String(card.number)));
         localStorage.setItem(DEMO_CLEANUP_KEY, '1');
-        persistCards(cleaned);
-        return cleaned;
+        const migratedClean = migrateCards(cleaned).cards;
+        persistCards(migratedClean);
+        return migratedClean;
       }
-      return stored;
+      const { cards, changed } = migrateCards(stored);
+      if (changed) persistCards(cards);
+      return cards;
     } catch (_) {
       return [];
     }
@@ -80,6 +113,88 @@
     localStorage.setItem(STORAGE_KEY, json);
     try { localStorage.setItem(RECOVERY_KEY, json); } catch (_) {}
     window.KartochkaRecovery?.save?.(cards);
+  }
+
+  /*
+   * Opening a card is history, not an edit. It is queued per account and flushed to the
+   * server through a dedicated call that never bumps the card's content revision, so an
+   * open on device A reaches device B without creating a false editing conflict. The queue
+   * survives reloads, so an offline open is never dropped without the user noticing.
+   */
+  function openQueueKey() {
+    const owner = state.user?.id || localStorage.getItem(CLOUD_USER_KEY) || 'local';
+    return `${OPEN_QUEUE_KEY}.${owner}`;
+  }
+
+  function readOpenQueue() {
+    try {
+      const data = JSON.parse(localStorage.getItem(openQueueKey()) || '{}');
+      return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+    } catch (_) { return {}; }
+  }
+
+  function writeOpenQueue(queue) {
+    try { localStorage.setItem(openQueueKey(), JSON.stringify(queue)); } catch (_) {}
+  }
+
+  function queueOpen(id, at) {
+    const queue = readOpenQueue();
+    if (Number(queue[id] || 0) >= at) return;
+    queue[id] = at;
+    writeOpenQueue(queue);
+  }
+
+  /* Opens recorded before the account was known are stored under a neutral key. Once the
+     user is signed in they belong to that account, so they are folded in rather than lost. */
+  function adoptAnonymousOpens() {
+    if (!state.user) return;
+    const anonymousKey = `${OPEN_QUEUE_KEY}.local`;
+    if (anonymousKey === openQueueKey()) return;
+    let pending = {};
+    try {
+      pending = JSON.parse(localStorage.getItem(anonymousKey) || '{}');
+    } catch (_) { pending = {}; }
+    const ids = Object.keys(pending || {});
+    if (!ids.length) {
+      try { localStorage.removeItem(anonymousKey); } catch (_) {}
+      return;
+    }
+    const owned = new Set(state.cards.map(card => card.id));
+    const queue = readOpenQueue();
+    for (const id of ids) {
+      // Only adopt opens for cards this account actually holds.
+      if (!owned.has(id)) continue;
+      const at = Number(pending[id] || 0);
+      if (at > Number(queue[id] || 0)) queue[id] = at;
+    }
+    writeOpenQueue(queue);
+    try { localStorage.removeItem(anonymousKey); } catch (_) {}
+  }
+
+  async function flushOpenQueue() {
+    adoptAnonymousOpens();
+    const queue = readOpenQueue();
+    const entries = Object.entries(queue);
+    if (!entries.length || !state.user || !window.KartochkaCloud?.recordOpens) return;
+    try {
+      const accepted = await window.KartochkaCloud.recordOpens(entries.map(([id, at]) => ({ id, at: Number(at) })));
+      const remaining = readOpenQueue();
+      for (const id of accepted || []) {
+        // Only drop entries the server actually stored, and only if no newer open arrived.
+        if (Number(remaining[id] || 0) <= Number(queue[id] || 0)) delete remaining[id];
+      }
+      writeOpenQueue(remaining);
+    } catch (_) {
+      // Keep the queue: the next successful sync retries it.
+    }
+  }
+
+  function markOpened(card) {
+    const now = Date.now();
+    card.openedAt = now;
+    persistCards(state.cards);
+    queueOpen(card.id, now);
+    flushOpenQueue().catch(() => {});
   }
 
   function saveCards(sync = true) {
@@ -203,13 +318,22 @@
     return [...merged.values()];
   }
 
+  function cardContentSignature(cards) {
+    return JSON.stringify(cards.map(card => [
+      card.id, card.store, String(card.number), card.a, card.b,
+      card.text || '#fff', card.format || 'code_128', card.codeImage || null
+    ]));
+  }
+
   async function syncWithCloud({ quiet = false, initial = false } = {}) {
     if (!state.user || !cloudAvailable() || state.cloudBusy) return;
     state.cloudBusy = true;
     updateCloudUI();
     showAuthStep('account');
     try {
-      const walletBeforeSync = JSON.stringify(state.cards);
+      // Compare CONTENT only. Opening a card during a sync changes open history, and that
+      // must not abort the upload of a genuine edit — an open is not an edit.
+      const walletBeforeSync = cardContentSignature(state.cards);
       const deletionKey = cloudDeletionsKey();
       const pendingDeletions = readStringList(deletionKey);
       for (const id of pendingDeletions) await window.KartochkaCloud.deleteCard(id);
@@ -218,7 +342,7 @@
       // listCards reconciles remote tombstones, cached cards and offline edits.
       // Never union local cards again: that would resurrect a deleted card.
       const reconciled = await window.KartochkaCloud.listCards();
-      if (JSON.stringify(state.cards) !== walletBeforeSync) {
+      if (cardContentSignature(state.cards) !== walletBeforeSync) {
         throw new Error('Карты изменились во время синхронизации. Повторите попытку.');
       }
       persistCards(reconciled);
@@ -227,6 +351,7 @@
       localStorage.setItem(CLOUD_USER_KEY, state.user.id);
       localStorage.setItem(cloudIdsKey(), JSON.stringify(state.cards.map(card => card.id)));
       renderStack();
+      renderQuick();
       renderGrid($('#cardSearch').value);
       if (!quiet) toast('Карты синхронизированы');
     } catch (error) {
@@ -240,29 +365,76 @@
 
   async function initializeCloud() {
     updateCloudUI();
-    if (!cloudAvailable()) return;
+    if (!cloudAvailable()) {
+      revealAfterAuth();
+      return;
+    }
     try {
       await window.KartochkaTelegram?.ready;
       if (telegramMode()) await window.KartochkaTelegram.authenticate();
       const session = await window.KartochkaCloud.validSession();
       state.user = session?.user || null;
+      if (telegramMode() && !state.user) throw new Error('Сессия истекла. Войдите снова.');
       if (!state.user && localStorage.getItem(CLOUD_USER_KEY)) {
         state.cards = [];
         saveCards(false);
         localStorage.removeItem(CLOUD_USER_KEY);
         renderStack();
+        renderQuick();
         renderGrid();
       }
+      revealAfterAuth();
       updateCloudUI();
-      if (state.user) await syncWithCloud({ quiet: true });
+      if (state.user) {
+        await syncWithCloud({ quiet: true });
+        await flushOpenQueue();
+      }
     } catch (error) {
       state.user = null;
       updateCloudUI();
       if (telegramMode()) {
+        // No verified session means no cards: leave the neutral gate up rather than falling
+        // back to whatever happens to sit in this device's localStorage.
+        state.cards = [];
+        renderStack();
+        renderQuick();
+        renderGrid();
+        showPrivacyGate(cloudErrorMessage(error), true);
         setAuthError(cloudErrorMessage(error));
         showAuthStep('email');
+        return;
       }
+      revealAfterAuth();
     }
+  }
+
+  /*
+   * Decides whether the cards sitting in this device's localStorage may be shown to the
+   * account that just signed in.
+   *
+   * CLOUD_USER_KEY records who this device's wallet last belonged to. Inside Telegram a
+   * wallet with a different owner — or with no recorded owner at all, which cannot be
+   * attributed to anybody — stays hidden until the cloud sync resolves it. Nothing is
+   * deleted: the data stays on disk and its real owner still gets it back on their next
+   * sign-in, and the backup tools still see it.
+   */
+  function localCardsBelongToCurrentUser() {
+    const owner = localStorage.getItem(CLOUD_USER_KEY);
+    if (!state.user) return !telegramMode();
+    if (owner) return owner === state.user.id;
+    return !telegramMode();
+  }
+
+  /* Only now may local cards be read and painted: the account is settled. */
+  function revealAfterAuth() {
+    if (!state.cards.length && localCardsBelongToCurrentUser()) {
+      state.cards = loadCards();
+      renderStack();
+      renderQuick();
+      renderGrid();
+    }
+    hidePrivacyGate();
+    syncBackButton();
   }
 
   async function submitEmail(event) {
@@ -313,6 +485,7 @@
       saveCards(false);
       localStorage.removeItem(CLOUD_USER_KEY);
       renderStack();
+      renderQuick();
       renderGrid();
       updateCloudUI();
       showAuthStep('email');
@@ -378,7 +551,23 @@
   }
 
   function sortedCards() {
-    return [...state.cards].sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
+    // 1. Cards with a confirmed open, newest first.
+    // 2. Cards that were never opened, after them.
+    // 3. Equal timestamps fall back to a stable order so the list never reshuffles itself.
+    return [...state.cards].sort((a, b) => {
+      const openedA = openedAtOf(a);
+      const openedB = openedAtOf(b);
+      if (openedA !== openedB) return openedB - openedA;
+      if (openedA === 0) {
+        const hint = legacyHintOf(b) - legacyHintOf(a);
+        if (hint) return hint;
+      }
+      return String(a.id).localeCompare(String(b.id));
+    });
+  }
+
+  function openedCards() {
+    return sortedCards().filter(card => openedAtOf(card) > 0);
   }
 
   function renderStack() {
@@ -480,6 +669,138 @@
     root.setProperty('--wallet-edge', theme.edge);
     root.setProperty('--wallet-thread', theme.thread);
     renderThemes();
+  }
+
+  /* ---------------------------------------------------------------------
+   * Compact quick-access screen (startapp=quick).
+   * A separate screen with its own markup, not a squeezed wallet: no bottom
+   * navigation, no catalog, no design tab, no Premium.
+   * ------------------------------------------------------------------- */
+  function renderQuick() {
+    const list = $('#quickList');
+    if (!list) return;
+    const empty = $('#quickEmpty');
+    const allButton = $('#quickAllCards');
+    const recent = openedCards().slice(0, 3);
+    list.replaceChildren();
+    list.hidden = recent.length === 0;
+    empty.hidden = recent.length > 0;
+
+    if (!recent.length) {
+      const noCards = state.cards.length === 0;
+      $('#quickEmptyTitle').textContent = noCards ? 'Здесь появятся ваши карты' : 'Пока нет открытых карт';
+      $('#quickEmptyText').textContent = noCards
+        ? 'Добавьте первую карту — дальше она будет открываться одним нажатием.'
+        : 'Выберите карту из списка — в следующий раз она будет здесь первой.';
+      allButton.textContent = noCards ? 'Добавить первую карту' : 'Все карты';
+      allButton.dataset.action = noCards ? 'add' : 'all';
+      return;
+    }
+
+    allButton.textContent = 'Все карты';
+    allButton.dataset.action = 'all';
+    recent.forEach((card, index) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = index === 0 ? 'quick-card primary' : 'quick-card';
+      button.setAttribute('role', 'listitem');
+      button.style.setProperty('--card-a', card.a);
+      button.style.setProperty('--card-b', card.b);
+      button.style.setProperty('--card-text', card.text || '#fff');
+      const brand = brandForStore(card.store);
+      const logo = document.createElement('span');
+      logo.className = 'quick-card-logo';
+      logo.textContent = brand?.mark || initials(card.store);
+      const body = document.createElement('span');
+      body.className = 'quick-card-body';
+      const store = document.createElement('strong');
+      store.className = 'quick-card-store';
+      store.textContent = card.store;
+      const digits = document.createElement('small');
+      digits.className = 'quick-card-digits';
+      // Only the tail of the number: the full number never appears on the quick screen.
+      digits.textContent = lastDigits(card.number);
+      body.append(store, digits);
+      const arrow = document.createElement('span');
+      arrow.className = 'quick-card-arrow';
+      arrow.textContent = '\u203a';
+      button.append(logo, body, arrow);
+      button.setAttribute('aria-label', `Показать код: ${card.store}`);
+      button.addEventListener('click', () => openCard(card.id));
+      list.append(button);
+    });
+  }
+
+  /* The code sheet needs more height than a compact launch provides. This runs inside the
+     same tap that opened the card, so no extra button appears. Telegram documents no way
+     back to compact height, so nothing here promises one. */
+  function requestRoomForCode() {
+    const telegram = window.KartochkaTelegram;
+    if (!telegram?.active?.() || telegram.isExpanded?.()) return;
+    const stable = Number(telegram.viewport?.().stableHeight || 0);
+    if (stable && stable >= 520) return; // Already tall enough for a scannable code.
+    telegram.expand('card-opened');
+  }
+
+  function enterQuickMode() {
+    state.mode = 'quick';
+    document.body.classList.add('quick-mode');
+    $('#quickScreen').hidden = false;
+    renderQuick();
+  }
+
+  function leaveQuickMode(target = 'all') {
+    // A deliberate user action, so asking Telegram for the full sheet is allowed here.
+    window.KartochkaTelegram?.expand?.('open-full-wallet');
+    state.quickReturnView = 'quick';
+    document.body.classList.remove('quick-mode');
+    $('#quickScreen').hidden = true;
+    showView(target);
+    syncBackButton();
+  }
+
+  function returnToQuickScreen() {
+    if (state.mode !== 'quick') return false;
+    state.quickReturnView = null;
+    document.body.classList.add('quick-mode');
+    $('#quickScreen').hidden = false;
+    renderQuick();
+    syncBackButton();
+    return true;
+  }
+
+  /* Telegram's BackButton handler is registered once inside KartochkaTelegram; here we only
+     swap which action it performs and whether it is visible. */
+  function syncBackButton() {
+    const telegram = window.KartochkaTelegram;
+    if (!telegram?.active?.()) return;
+    const codeOpen = !$('#cardOverlay').hidden;
+    if (codeOpen) {
+      telegram.backButton.show(() => $('#closeCard').click());
+      return;
+    }
+    if (state.mode === 'quick' && state.quickReturnView === 'quick') {
+      telegram.backButton.show(() => returnToQuickScreen());
+      return;
+    }
+    telegram.backButton.hide();
+  }
+
+  /* ---------------------------------------------------------------------
+   * Neutral boot gate. Inside Telegram no private card is painted until the
+   * server has verified initData and returned a session for THIS account.
+   * ------------------------------------------------------------------- */
+  function showPrivacyGate(message = 'Проверяем вход…', retry = false) {
+    const gate = $('#privacyGate');
+    if (!gate) return;
+    gate.hidden = false;
+    $('#privacyGateText').textContent = message;
+    $('#privacyGateRetry').hidden = !retry;
+  }
+
+  function hidePrivacyGate() {
+    const gate = $('#privacyGate');
+    if (gate) gate.hidden = true;
   }
 
   function showView(name) {
@@ -770,7 +1091,7 @@
     state.cards.push({
       id: crypto.randomUUID(), store, number,
       a: palette.a, b: palette.b, text: palette.text,
-      lastUsed: Date.now(), format,
+      lastUsed: Date.now(), openedAt: 0, legacyTouchedAt: Date.now(), format,
       codeImage: state.pendingCodeImage || null
     });
     try {
@@ -782,6 +1103,7 @@
     }
     hideOverlay('#manualOverlay');
     renderStack();
+    renderQuick();
     renderGrid();
     showView('wallet');
     state.walletOpen = true;
@@ -794,11 +1116,16 @@
   function openCard(id) {
     const card = state.cards.find(item => item.id === id);
     if (!card) return;
-    card.lastUsed = Date.now();
+    // A real open, recorded separately from creation and editing.
+    markOpened(card);
     state.activeCardId = id;
-    saveCards();
     renderStack();
+    renderQuick();
+    renderQuick();
     renderGrid($('#cardSearch').value);
+    // Still inside the user's tap: if the compact sheet is too short for a readable code,
+    // ask Telegram for more room now rather than making the user press a second button.
+    if (state.mode === 'quick') requestRoomForCode();
     $('#detailCard').style.setProperty('--card-a', card.a);
     $('#detailCard').style.setProperty('--card-b', card.b);
     $('#detailCard').style.setProperty('--card-text', card.text || '#fff');
@@ -831,6 +1158,7 @@
       mount.append(error);
     }
     showOverlay('#cardOverlay');
+    syncBackButton();
     requestScreenWakeLock();
   }
 
@@ -894,6 +1222,7 @@
     hideOverlay('#deleteConfirmOverlay');
     hideOverlay('#cardOverlay');
     renderStack();
+    renderQuick();
     renderGrid($('#cardSearch').value);
     toast('Карта удалена');
   }
@@ -981,7 +1310,50 @@
     return svg;
   }
 
+  const QUICK_LINK = 'https://t.me/KartochkaWalletBot?startapp=quick&mode=compact';
+
+  function bindQuickEvents() {
+    $('#quickAllCards').addEventListener('click', event => {
+      if (event.currentTarget.dataset.action === 'add') {
+        leaveQuickMode('wallet');
+        openAdd();
+        return;
+      }
+      leaveQuickMode('all');
+    });
+    $('#privacyGateRetry').addEventListener('click', () => {
+      showPrivacyGate('Проверяем вход…');
+      initializeCloud();
+    });
+    $('#openQuickAccess').addEventListener('click', () => showView('quickAccess'));
+    $('#quickAccessUrl').textContent = QUICK_LINK;
+    $('#copyQuickLink').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(QUICK_LINK);
+        toast('Ссылка скопирована');
+      } catch (_) {
+        // Clipboard access is refused in some in-app browsers; select the text instead of lying.
+        const range = document.createRange();
+        range.selectNodeContents($('#quickAccessUrl'));
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        toast('Скопируйте выделенную ссылку вручную');
+      }
+    });
+    $('#testQuickLink').addEventListener('click', () => {
+      const status = $('#quickLinkStatus');
+      status.hidden = false;
+      // Opening the link from inside Telegram just reloads this Mini App, which proves nothing.
+      status.textContent = window.KartochkaTelegram?.active?.()
+        ? 'Вы уже внутри Telegram. Проверьте ссылку из браузера или другого чата — так виден реальный запуск.'
+        : 'Открываем ссылку в Telegram. Если приложение не откроется, проверьте, что бот настроен как Main Mini App.';
+      if (!window.KartochkaTelegram?.active?.()) window.open(QUICK_LINK, '_blank', 'noopener');
+    });
+  }
+
   function bindEvents() {
+    bindQuickEvents();
     $('#walletBody').addEventListener('click', toggleWallet);
     ['#quickAdd','#addCardHome','#addCardAll'].forEach(id => $(id).addEventListener('click', openAdd));
     ['#openAllTop','#showAllHome'].forEach(id => $(id).addEventListener('click', () => showView('all')));
@@ -1010,7 +1382,7 @@
       $('#cardNumber').inputMode = event.target.value === 'qr_code' ? 'text' : 'numeric';
     });
     $('#cardSearch').addEventListener('input', event => renderGrid(event.target.value));
-    $('#closeCard').addEventListener('click', () => { releaseScreenWakeLock(); hideOverlay('#cardOverlay'); });
+    $('#closeCard').addEventListener('click', () => { releaseScreenWakeLock(); hideOverlay('#cardOverlay'); syncBackButton(); });
     $('#deleteCard').addEventListener('click', deleteActiveCard);
     $('#cancelDelete').addEventListener('click', () => hideOverlay('#deleteConfirmOverlay'));
     $('#confirmDelete').addEventListener('click', confirmDeleteActiveCard);
@@ -1030,7 +1402,7 @@
       const open = $$('.overlay:not([hidden])').at(-1);
       if (!open) return;
       if (open.id === 'scannerOverlay') stopLiveScanner();
-      else if (open.id === 'cardOverlay') { releaseScreenWakeLock(); hideOverlay('#cardOverlay'); }
+      else if (open.id === 'cardOverlay') { releaseScreenWakeLock(); hideOverlay('#cardOverlay'); syncBackButton(); }
       else hideOverlay(`#${open.id}`);
     });
     document.addEventListener('visibilitychange', () => {
@@ -1095,11 +1467,11 @@
         if (!store || store.length > 28 || number.length < 3 || number.length > 120) throw new Error('Проверьте название магазина и номер карты.');
         const palette = palettes.find(item => item.id === input.color) || brandForStore(store) || palettes[0];
         if (format === 'ean_13' && !isValidEAN13(number)) throw new Error('Некорректный номер EAN-13.');
-        const card = { id: crypto.randomUUID(), store, number, a: palette.a, b: palette.b, text: palette.text, lastUsed: Date.now(), format, codeImage: null };
+        const card = { id: crypto.randomUUID(), store, number, a: palette.a, b: palette.b, text: palette.text, lastUsed: Date.now(), openedAt: 0, legacyTouchedAt: Date.now(), format, codeImage: null };
         state.cards.push(card);
         saveCards();
         requestPersistentStorage();
-        renderStack(); renderGrid($('#cardSearch').value); showView('wallet');
+        renderStack(); renderQuick(); renderGrid($('#cardSearch').value); showView('wallet');
         return { created: true, id: card.id, store: card.store };
       }
     });
@@ -1107,16 +1479,59 @@
 
   async function init() {
     await window.KartochkaRecovery?.ready;
-    state.cards = loadCards();
     applyTheme(state.theme);
-    renderStack();
-    renderGrid();
     renderPalettes();
     renderStorePresets();
     bindEvents();
     registerWebMCP();
+
+    // Decide the Telegram situation BEFORE any private card touches the DOM. Inside Telegram
+    // the identity of the account is not known until the server has verified initData, and a
+    // second Telegram account on the same phone must not see the first account's wallet —
+    // not even for one frame.
+    //
+    // `likely()` answers synchronously from the launch parameters, so an ordinary web page
+    // renders immediately and never waits on an SDK that has nothing to tell it.
+    const telegram = window.KartochkaTelegram;
+    const likelyTelegram = telegram?.likely?.() ?? false;
+    if (likelyTelegram) {
+      showPrivacyGate('Проверяем вход…');
+    } else {
+      state.cards = loadCards();
+      renderStack();
+      renderQuick();
+      renderGrid();
+    }
+
+    const inTelegram = await (telegram?.ready ?? Promise.resolve(false));
+    if (inTelegram) {
+      // Retract anything rendered eagerly: inside Telegram the account is not settled yet.
+      state.cards = [];
+      renderStack();
+      renderQuick();
+      renderGrid();
+      showPrivacyGate('Проверяем вход…');
+      if (telegram.mode() === 'quick') enterQuickMode();
+      // Telegram may now paint: the first screen is the neutral gate, never someone's cards.
+      telegram.signalReady();
+      telegram.onViewportChange(() => renderQuick());
+    } else {
+      if (likelyTelegram) {
+        // Looked like a Telegram launch but no signed initData arrived; fall back to the
+        // ordinary offline wallet rather than hanging on the gate.
+        state.cards = loadCards();
+        renderStack();
+        renderQuick();
+        renderGrid();
+        hidePrivacyGate();
+      }
+      // Outside Telegram ?startapp=quick still selects the compact screen, which makes the
+      // layout testable in an ordinary browser.
+      if (telegram?.startParam?.() === 'quick') enterQuickMode();
+    }
+
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
-    initializeCloud();
+    await initializeCloud();
   }
 
   init();

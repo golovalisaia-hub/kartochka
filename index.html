@@ -35,6 +35,32 @@
   </svg>
 
   <div class="app-shell">
+    <!-- Neutral boot gate: shown until a server-verified session exists inside Telegram, so a
+         second Telegram account can never see the previous account's cards, not even for a frame. -->
+    <div class="privacy-gate" id="privacyGate" hidden>
+      <div class="privacy-gate-mark">К</div>
+      <p class="privacy-gate-text" id="privacyGateText">Проверяем вход…</p>
+      <button class="secondary-button privacy-gate-retry" id="privacyGateRetry" type="button" hidden>Повторить вход</button>
+    </div>
+
+    <!-- Compact quick-access screen. Rendered instead of the wallet when the Mini App was
+         launched with startapp=quick. It is a separate screen, not a shrunken wallet. -->
+    <section class="quick-screen" id="quickScreen" hidden aria-labelledby="quickTitle">
+      <div class="quick-head">
+        <span class="brand-mark quick-mark">К</span>
+        <div>
+          <h1 class="quick-title" id="quickTitle">Карточка</h1>
+          <p class="quick-subtitle">Недавно открытые</p>
+        </div>
+      </div>
+      <div class="quick-list" id="quickList" role="list"></div>
+      <div class="quick-empty" id="quickEmpty" hidden>
+        <strong id="quickEmptyTitle">Пока нет открытых карт</strong>
+        <span id="quickEmptyText">Выберите карту из списка — она появится здесь первой.</span>
+      </div>
+      <button class="primary-button quick-all" id="quickAllCards" type="button">Все карты</button>
+    </section>
+
     <header class="topbar">
       <div class="brand"><span class="brand-mark">К</span><span>Карточка</span></div>
       <div class="topbar-actions">
@@ -71,6 +97,7 @@
           <button class="secondary-button" id="showAllHome"><svg><use href="#i-grid"/></svg><span id="showAllLabel">Все карты</span></button>
         </div>
         <button class="privacy-note sync-note" id="syncStatus" type="button"><svg><use href="#i-cloud"/></svg><span>Карты хранятся только на этом устройстве</span></button>
+        <button class="text-button quick-access-entry" id="openQuickAccess" type="button">Быстрый доступ с телефона →</button>
       </section>
 
       <section class="view" id="allView" aria-labelledby="allTitle">
@@ -92,6 +119,52 @@
         </div>
         <div class="theme-preview"><div class="mini-wallet"><span>К</span><small>КАРТОЧКА</small></div></div>
         <div class="theme-list" id="themeList"></div>
+      </section>
+
+      <section class="view" id="quickAccessView" aria-labelledby="quickAccessTitle">
+        <div class="subpage-head">
+          <button class="icon-button back-button" data-go="wallet" aria-label="Назад"><svg><use href="#i-back"/></svg></button>
+          <div><p class="eyebrow">Быстрый доступ</p><h1 id="quickAccessTitle">Карта за одно нажатие</h1></div>
+          <span class="head-spacer"></span>
+        </div>
+        <p class="quick-access-lead">Эта ссылка открывает «Карточку» сразу на экране недавно открытых карт. Назначьте её на жест телефона — и до штрихкода останется одно нажатие.</p>
+        <div class="quick-access-link">
+          <code id="quickAccessUrl">https://t.me/KartochkaWalletBot?startapp=quick&amp;mode=compact</code>
+          <button class="secondary-button" id="copyQuickLink" type="button">Скопировать ссылку</button>
+        </div>
+        <button class="secondary-button wide" id="testQuickLink" type="button">Проверить ссылку</button>
+        <p class="quick-access-note" id="quickLinkStatus" hidden></p>
+
+        <details class="quick-guide" id="guideIphoneBackTap">
+          <summary>iPhone · двойное касание задней панели</summary>
+          <ol>
+            <li>Откройте приложение «Команды» → «+» → «Добавить действие».</li>
+            <li>Найдите действие «Открыть URL» и вставьте скопированную ссылку.</li>
+            <li>Назовите команду «Карточка» и сохраните её.</li>
+            <li>Настройки → Универсальный доступ → Касание → Касание задней панели → Двойное касание → выберите «Карточка».</li>
+          </ol>
+          <p class="quick-access-note">Названия пунктов отличаются в разных версиях iOS. iOS может показать подтверждение открытия ссылки — это отдельный шаг, обойти его нельзя. Запуск с заблокированного экрана не гарантирован.</p>
+        </details>
+
+        <details class="quick-guide" id="guideIphoneAction">
+          <summary>iPhone · кнопка «Действие»</summary>
+          <ol>
+            <li>Создайте ту же команду «Карточка», как описано выше.</li>
+            <li>Настройки → Кнопка «Действие» → пролистайте до «Быстрая команда».</li>
+            <li>Нажмите «Выбрать» и укажите команду «Карточка».</li>
+          </ol>
+          <p class="quick-access-note">Кнопка «Действие» есть не на всех моделях. Двойное нажатие обычной боковой кнопки переназначить на Mini App нельзя.</p>
+        </details>
+
+        <details class="quick-guide" id="guideAndroid">
+          <summary>Android · жесты и ярлык</summary>
+          <ol>
+            <li>Универсальный способ: откройте ссылку в браузере и выберите «Добавить на главный экран» — получится ярлык в одно нажатие.</li>
+            <li>Pixel: Настройки → Система → Жесты → Quick Tap. Если в списке только приложения, выберите Telegram и откройте «Карточку» из чата.</li>
+            <li>Samsung: Настройки → Дополнительные функции → Боковая кнопка → Двойное нажатие. Доступен запуск приложения или команды Bixby.</li>
+          </ol>
+          <p class="quick-access-note">Системные жесты Android часто умеют запускать только приложение, а не конкретную ссылку. Если ваш телефон открывает просто Telegram — используйте ярлык на главном экране, он проверенно работает.</p>
+        </details>
       </section>
 
       <section class="view" id="catalogView" aria-labelledby="catalogTitle">

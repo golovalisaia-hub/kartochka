@@ -131,3 +131,94 @@ export async function telegramApi(botToken, method, payload) {
   }
   return body.result;
 }
+
+/*
+ * Why this check exists.
+ *
+ * Telegram opens TELEGRAM_WEB_APP_URL verbatim inside its WebView. If that URL is a hosting
+ * preview that sits behind an access wall (Vercel Deployment Protection, Netlify password
+ * protection, Cloudflare Access, GitHub Pages on a private repo), the host answers Telegram
+ * with its OWN login page. The user then taps "Открыть Карточку" and lands on, for example,
+ * "Log in to Vercel" inside a window titled «Карточка» — the bot and the Mini App button are
+ * configured perfectly, and the app is still unreachable.
+ *
+ * Nothing in the Telegram API can detect that: setChatMenuButton accepts any HTTPS URL. So we
+ * check the URL ourselves before publishing it, and refuse to configure a button that would
+ * take users to somebody's login screen.
+ */
+const ACCESS_WALL_SIGNATURES = [
+  {
+    id: 'vercel-deployment-protection',
+    test: (body, response) =>
+      /vercel\.com\/(?:sso|login)|_vercel\/sso|Log in to Vercel|Authentication Required/i.test(body) ||
+      response.headers.has('set-cookie') && /_vercel_jwt/i.test(response.headers.get('set-cookie') || '') ||
+      /vercel/i.test(response.headers.get('x-vercel-mitigated') || ''),
+    hint: 'Vercel Deployment Protection включена. Vercel → Project → Settings → Deployment Protection → Vercel Authentication → Disabled (или добавьте домен в Protection Bypass). Пока защита включена, Telegram будет показывать экран входа Vercel вместо «Карточки».'
+  },
+  {
+    id: 'netlify-password',
+    test: body => /netlify.*password|Site is password protected/i.test(body),
+    hint: 'Netlify site password включён. Site settings → Access control → Visitor access → снимите пароль.'
+  },
+  {
+    id: 'cloudflare-access',
+    test: (body, response) =>
+      /cloudflareaccess\.com/i.test(body) || /cloudflareaccess\.com/i.test(response.url || ''),
+    hint: 'Cloudflare Access закрывает адрес. Уберите приложение из политики Access или добавьте публичное исключение.'
+  },
+  {
+    id: 'generic-login-wall',
+    test: body => /<title>[^<]*(log ?in|sign ?in|authentication)[^<]*<\/title>/i.test(body),
+    hint: 'Адрес отвечает страницей входа стороннего сервиса. Откройте его в приватном окне браузера: должна открываться «Карточка», а не форма входа.'
+  }
+];
+
+// The real app always ships these markers; a login wall never does.
+const APP_SIGNATURES = [/<title>\s*Карточка\s*<\/title>/i, /telegram-mini-app\.js/i, /id="quickScreen"/i];
+
+export async function inspectWebAppUrl(url) {
+  if (!/^https:\/\//i.test(String(url || ''))) {
+    return { ok: false, reason: 'missing', hint: 'TELEGRAM_WEB_APP_URL не задан или не начинается с https://.' };
+  }
+  let response;
+  let body = '';
+  try {
+    response = await fetch(url, {
+      redirect: 'follow',
+      headers: {
+        // Telegram's WebView asks for HTML; ask the same way so we see the same answer.
+        accept: 'text/html,application/xhtml+xml',
+        'user-agent': 'KartochkaSetupCheck/1.0'
+      }
+    });
+    body = (await response.text()).slice(0, 200000);
+  } catch (_) {
+    return { ok: false, reason: 'unreachable', hint: 'Адрес не отвечает. Проверьте, что развёртывание опубликовано и доступно из интернета.' };
+  }
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      reason: `http-${response.status}`,
+      hint: response.status === 401 || response.status === 403
+        ? 'Хостинг требует авторизации. Telegram увидит тот же экран входа. Отключите защиту развёртывания.'
+        : `Адрес отвечает кодом ${response.status}. Telegram покажет ту же ошибку.`
+    };
+  }
+
+  for (const signature of ACCESS_WALL_SIGNATURES) {
+    if (signature.test(body, response)) {
+      return { ok: false, reason: signature.id, hint: signature.hint };
+    }
+  }
+
+  if (!APP_SIGNATURES.some(pattern => pattern.test(body))) {
+    return {
+      ok: false,
+      reason: 'not-kartochka',
+      hint: 'Адрес отвечает, но это не «Карточка». Проверьте, что TELEGRAM_WEB_APP_URL указывает на корень опубликованного приложения.'
+    };
+  }
+
+  return { ok: true, reason: 'ok', hint: '' };
+}

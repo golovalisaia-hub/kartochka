@@ -44,3 +44,7 @@ jobs:
         run: node tests/telegram-private-test.cjs
       - name: Telegram Mini App browser flow
         run: node tests/telegram-browser-e2e.cjs
+      - name: Telegram quick mode, open history and compact layout
+        run: node tests/telegram-quick-mode.cjs
+      - name: Telegram account isolation and cross-device open sync
+        run: node tests/telegram-account-privacy.cjs
