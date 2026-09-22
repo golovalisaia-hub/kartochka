@@ -13,6 +13,10 @@
 # Секреты читаются только из переменных окружения и никогда не печатаются.
 set -uo pipefail
 
+# Пути считаются от расположения скрипта, чтобы его можно было запускать из любого каталога.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT" || { echo "Не найден корень репозитория" >&2; exit 1; }
+
 REF="${SUPABASE_PROJECT_REF:-}"
 HOOK_SECRET="${TELEGRAM_WEBHOOK_SECRET:-}"
 SUPA="npx --yes supabase"

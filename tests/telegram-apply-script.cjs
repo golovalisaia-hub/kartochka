@@ -12,10 +12,10 @@ const { execFile } = require('node:child_process');
 
 // Скрипт обязательно запускается АСИНХРОННО: мок Bot API живёт в этом же процессе, и
 // синхронный запуск заблокировал бы event loop — сервер не смог бы ответить.
-function runScript(env) {
+function runScript(env, cwd = root) {
   return new Promise(resolve => {
-    execFile('bash', ['tools/telegram-apply.sh'], {
-      cwd: root, encoding: 'utf8', env: { ...process.env, ...env }
+    execFile('bash', [path.join(root, 'tools/telegram-apply.sh')], {
+      cwd, encoding: 'utf8', env: { ...process.env, ...env }
     }, (error, stdout, stderr) => resolve({ code: error ? error.code ?? 1 : 0, stdout, stderr }));
   });
 }
@@ -116,6 +116,19 @@ function startSite(html) {
       assert.equal(calls.some(item => item.method === 'setChatMenuButton'), false);
       assert.match(output, /пропущена/);
       assert.ok(calls.some(item => item.method === 'setMyName'), 'остальное оформление применяется');
+    });
+
+    await check('скрипт работает из любого каталога, а не только из корня', async () => {
+      calls.length = 0;
+      // Тексты лежат в репозитории, поэтому скрипт обязан находить их по своему пути,
+      // а не по текущему каталогу пользователя.
+      const { stdout, code } = await runScript(
+        { TELEGRAM_BOT_TOKEN: 'test-token', TELEGRAM_API_BASE: apiBase, TELEGRAM_WEB_APP_URL: '' },
+        require('node:os').tmpdir()
+      );
+      assert.equal(code, 0, `запуск из другого каталога должен проходить: ${stdout}`);
+      assert.doesNotMatch(stdout, /ERR_MODULE_NOT_FOUND/);
+      assert.ok(calls.some(item => item.method === 'setMyDescription'), 'оформление всё равно применяется');
     });
 
     if (failures.length) throw new Error(`${failures.length} проверок скрипта провалено: ${failures.join(', ')}`);
