@@ -106,15 +106,27 @@ const BOT_SHORT_DESCRIPTION='Все скидочные карты в одном 
  * source is configured, actually uploads the picture.
  */
 const AVATAR_METHODS=['setMyProfilePhoto','setMyPhoto'];
+/*
+ * Existence must be proven, never assumed from the absence of a "method not found". A network
+ * blip also fails to match that pattern, and treating it as proof would both misreport the
+ * API and go on to attempt an upload. So each outcome is classified explicitly and anything
+ * unrecognised stays `unknown`, which never authorises an upload.
+ */
 async function probeAvatarMethod(){
+  let lastDetail='';
   for(const method of AVATAR_METHODS){
     const probe=await tryBot(method,{});
-    // A missing-argument complaint proves the method exists on this Bot API version.
-    if(probe.ok||!/method not found|unsupported|not supported/i.test(probe.description)){
-      return{method,exists:true,detail:probe.description||''};
-    }
+    if(probe.ok)return{method,exists:'yes',detail:'method accepted an empty call'};
+    const detail=probe.description||'';
+    lastDetail=detail;
+    // Telegram names the method it does not know.
+    if(/method not found|unsupported|not supported|unknown method/i.test(detail))continue;
+    // An existing method complains about the argument we deliberately did not send.
+    if(/required|invalid|photo|file/i.test(detail))return{method,exists:'yes',detail};
+    // Anything else (transport failure, unfamiliar wording) is not evidence either way.
+    return{method:null,exists:'unknown',detail};
   }
-  return{method:null,exists:false,detail:'Bot API exposes no method for a bot to set its own avatar'};
+  return{method:null,exists:'no',detail:lastDetail||'Bot API exposes no method for a bot to set its own avatar'};
 }
 function avatarSource(appUrl){
   const explicit=Deno.env.get('TELEGRAM_AVATAR_URL')||'';
@@ -129,14 +141,17 @@ async function brand(){
   const probe=await probeAvatarMethod();
   const source=avatarSource(launch.appUrl);
   let applied=null;
-  if(probe.exists&&probe.method&&source){
+  // Only a proven method may be called with a real photo.
+  if(probe.exists==='yes'&&probe.method&&source){
     const sent=await tryBot(probe.method,{photo:source});
     applied={ok:sent.ok,detail:sent.ok?'':sent.description};
   }
   return{
     avatar:{
       api_method:probe.method,
-      api_can_set:probe.exists,
+      api_can_set:probe.exists==='yes',
+      api_probe:probe.exists,
+      api_detail:probe.detail,
       source_configured:Boolean(source),
       source_reachable:source?(await tryFetchHead(source)):false,
       applied,

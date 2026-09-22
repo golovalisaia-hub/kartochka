@@ -379,6 +379,23 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
         assert.equal(Object.keys(call.payload).length, 0, `${call.method} probe must send no photo`);
       }
       assert.equal(body.avatar.applied, null, 'nothing is uploaded while the API cannot do it');
+      assert.equal(body.avatar.api_probe, 'no', 'a 404 is definite evidence the method is absent');
+    });
+
+    await check('a transport failure is reported as unknown, never as "can set"', async () => {
+      reset();
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = async (url, options) => {
+        if (String(url).includes('/setMyProfilePhoto')) throw new Error('network down');
+        return realFetch(url, options);
+      };
+      let body;
+      try { body = await (await dispatch({ action: 'brand' })).json(); }
+      finally { globalThis.fetch = realFetch; }
+      assert.equal(body.avatar.api_probe, 'unknown', 'a blip must not be read as proof');
+      assert.equal(body.avatar.api_can_set, false);
+      assert.equal(body.avatar.applied, null, 'an unproven method must never be called with a photo');
+      assert.equal(calls.some(item => item.payload && item.payload.photo && /^setMy/.test(item.method)), false);
     });
 
     await check('the brand report names the configured avatar source', async () => {
