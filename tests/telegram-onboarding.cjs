@@ -210,7 +210,8 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
 
       // The caption and the grid ride along with the media, not only with the text message.
       const animation = calls.find(item => item.method === 'sendAnimation');
-      assert.match(animation.payload.animation, /assets\/branding\/welcome\.gif$/, 'the branding folder is looked at first');
+      // MP4 предпочтён намеренно: тот же ролик в 960x540 весит в разы меньше GIF.
+      assert.match(animation.payload.animation, /assets\/branding\/welcome\.mp4$/, 'MP4 must be preferred');
       assert.match(animation.payload.caption, /все скидочные карты в одном месте/);
       assert.ok(animation.payload.caption.length <= 1024, 'caption must fit under the animation');
       assert.deepEqual(animation.payload.reply_markup.inline_keyboard.map(row => row.length), [1, 1, 2, 2]);

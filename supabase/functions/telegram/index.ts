@@ -61,7 +61,7 @@ function coverCandidates(appUrl){
   if(/^https:\/\//i.test(photoUrl))push('sendPhoto',photoUrl);
   if(/^https:\/\//i.test(appUrl)){
     for(const [method,name] of [
-      ['sendAnimation','assets/branding/welcome.gif'],['sendAnimation','assets/branding/welcome.mp4'],
+      ['sendAnimation','assets/branding/welcome.mp4'],['sendAnimation','assets/branding/welcome.gif'],
       ['sendAnimation','welcome.mp4'],['sendAnimation','welcome.gif'],
       ['sendPhoto','assets/branding/welcome.png'],['sendPhoto','welcome.png']
     ]){

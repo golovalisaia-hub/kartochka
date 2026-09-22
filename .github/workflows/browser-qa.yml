@@ -50,5 +50,7 @@ jobs:
         run: node tests/telegram-account-privacy.cjs
       - name: Bot branding script against a fake Bot API
         run: node tests/telegram-apply-script.cjs
+      - name: Welcome animation integrity and real motion
+        run: node tests/branding-animation.cjs
       - name: Telegram bot onboarding and navigation
         run: node tests/telegram-onboarding.cjs
