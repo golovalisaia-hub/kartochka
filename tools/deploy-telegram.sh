@@ -35,9 +35,21 @@ fi
 
 echo
 echo "2/4 Проверяю обязательные секреты проекта…"
+# Список запрашивается ОДИН раз, и сбой команды отличается от отсутствия секрета: иначе
+# неудачный login выглядел бы как «ни один секрет не задан», и вы бы задавали их заново.
+secrets_out="$($SUPA secrets list --project-ref "$REF" 2>&1)"
+secrets_status=$?
+if [ "$secrets_status" -ne 0 ]; then
+  echo "  ! Не удалось получить список секретов — проверить их не могу." >&2
+  printf '    %s\n' "$secrets_out" | head -5 >&2
+  echo "    Обычно причина: не выполнен '$SUPA login' или неверный SUPABASE_PROJECT_REF." >&2
+  echo "    Функция уже опубликована; настройку можно продолжить после исправления." >&2
+  exit 1
+fi
+
 missing=0
 for name in TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET TELEGRAM_WEB_APP_URL; do
-  if $SUPA secrets list --project-ref "$REF" 2>/dev/null | grep -q "^[[:space:]]*${name}[[:space:]]"; then
+  if printf '%s' "$secrets_out" | grep -q "\b${name}\b"; then
     echo "  ✓ ${name} задан"
   else
     echo "  ✗ ${name} НЕ задан — задайте: $SUPA secrets set ${name}='...' --project-ref $REF"
