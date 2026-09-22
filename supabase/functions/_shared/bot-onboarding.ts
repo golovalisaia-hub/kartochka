@@ -1,73 +1,166 @@
-// Pure copy and keyboard builder for the Telegram bot's introductory flow.
-// The bot profile imagery belongs to the owner; no assets are replaced here.
+// Copy and keyboards for the Telegram bot's introduction. Pure functions: no network, no
+// state, no secrets — so every screen and every button can be asserted in a unit test.
+//
+// The owner's imagery is never replaced here. A welcome picture is attached by the caller.
+//
+// Telegram caps a photo caption at 1024 characters. Every page below is written to fit, so
+// any screen can be shown as a caption under the welcome picture without being truncated.
 const prefix = 'kartochka:';
+
+// `plans` is kept as an alias of `premium`: messages already sitting in users' chats carry
+// the old callback_data, and those buttons must keep working rather than silently failing.
+const PAGES = ['home', 'features', 'quick', 'backtap', 'action', 'android', 'premium', 'plans', 'support'];
 
 export function onboardingAction(data) {
   if (typeof data !== 'string' || !data.startsWith(prefix)) return null;
   const page = data.slice(prefix.length);
-  return ['home', 'features', 'premium', 'action', 'backtap', 'plans', 'support'].includes(page) ? page : null;
+  return PAGES.includes(page) ? page : null;
 }
 
 function callback(text, page) {
   return { text, callback_data: prefix + page };
 }
 
-export function onboardingPage(page, { appUrl = '', quickUrl = '', supportUrl = '', available = false } = {}) {
+const QUICK_LINK = /^https:\/\/t\.me\/[a-zA-Z0-9_]{5,32}\?startapp=quick&mode=compact$/;
+const SUPPORT_LINK = /^https:\/\/(t\.me|telegram\.me)\/[a-zA-Z0-9_]{5,32}(?:\?.*)?$/;
+
+export function onboardingPage(page, {
+  appUrl = '', quickUrl = '', supportUrl = '', available = false, returning = false
+} = {}) {
+  // A launch button is only ever offered once the URL has been proven to serve the app.
+  // A button that opens somebody's login page is worse than no button at all.
   const appButton = available && /^https:\/\//i.test(appUrl)
     ? [{ text: '💳 Открыть приложение', web_app: { url: appUrl } }]
     : [];
-  const quickButton = available && /^https:\/\/t\.me\/[a-zA-Z0-9_]+\?startapp=quick&mode=compact$/.test(quickUrl)
-    ? [{ text: '⚡ Быстрый кошелёк', url: quickUrl }]
+  const quickButton = available && QUICK_LINK.test(quickUrl)
+    ? [{ text: '⚡ Недавние карты', url: quickUrl }]
     : [];
-  const safeSupport = /^https:\/\/(t\.me|telegram\.me)\/[a-zA-Z0-9_]+(?:\?.*)?$/.test(supportUrl);
-  const back = page === 'home' ? [] : [[callback('← Назад к возможностям', 'features'), callback('⌂ В начало', 'home')]];
+  const hasSupport = SUPPORT_LINK.test(supportUrl);
+  const unavailable = '\n\n⚠️ Тестовое приложение пока недоступно по публичному адресу — кнопка запуска появится после публикации.';
+
+  const toMenu = callback('⌂ Главное меню', 'features');
+  const toQuick = callback('← Быстрый доступ', 'quick');
 
   switch (page) {
     case 'home':
       return {
-        text: '💳 Карточка — скидочные карты под рукой.\n\nСобирайте карты магазинов в одном кошельке, быстро открывайте штрихкоды и находите нужную карту без долгого поиска.\n\nСейчас идёт закрытый тест: используйте только вымышленные карты, реальные платежи выключены.\n\nНажмите «Начать», чтобы узнать, как всё работает.',
-        reply_markup: { inline_keyboard: [[callback('🚀 Начать', 'features')]] }
+        text: '💳 Карточка — все скидочные карты в одном месте.\n\n'
+          + 'Храните карты любимых магазинов, находите нужную за секунды и открывайте её прямо в Telegram. '
+          + 'Больше не нужно искать карту среди множества приложений.\n\n'
+          + 'Идёт закрытый тест: добавляйте только вымышленные карты, реальные платежи отключены.'
+          + (returning ? '\n\nВы уже пользуетесь «Карточкой» — можно сразу открыть кошелёк.' : ''),
+        reply_markup: {
+          inline_keyboard: [
+            // A returning user should not have to sit through the tour again.
+            ...(returning && appButton.length ? [appButton] : []),
+            [callback(returning ? '📖 О возможностях' : '🚀 Начать', 'features')]
+          ]
+        }
       };
+
     case 'features':
       return {
-        text: '✨ Что умеет «Карточка»?\n\n• Хранит ваши скидочные карты в личном кошельке.\n• Показывает QR-код или штрихкод для кассы.\n• Позволяет быстро открыть недавно просмотренные карты.\n• Помогает настроить запуск жестом телефона.\n\nОбщий каталог и Premium пока в разработке; реальная покупка и публикация чужих карт отключены.' + (available ? '' : '\n\n⚠️ Тестовое приложение пока недоступно по публичному адресу.'),
-        reply_markup: { inline_keyboard: [
-          ...(appButton.length ? [appButton] : []),
-          ...(quickButton.length ? [quickButton] : []),
-          [callback('📱 Кнопка действия', 'action'), callback('👆 Двойное касание', 'backtap')],
-          [callback('⭐ Premium', 'premium'), callback('💰 Тарифы', 'plans')],
-          [callback('🛟 Поддержка', 'support')],
-          [callback('⌂ На главную', 'home')]
-        ] }
+        text: '✨ Что умеет «Карточка»?\n\n'
+          + '• Хранит все скидочные карты в одном кошельке.\n'
+          + '• Добавляет карту вручную, камерой или по фотографии.\n'
+          + '• Находит нужный магазин поиском.\n'
+          + '• Показывает QR-код или штрихкод кассиру.\n'
+          + '• Помнит недавно открытые карты.\n'
+          + '• Запускается жестом телефона через Telegram.\n\n'
+          + 'Выберите раздел ниже.'
+          + (available ? '' : unavailable),
+        reply_markup: {
+          inline_keyboard: [
+            ...(appButton.length ? [appButton] : []),
+            [callback('⚡ Быстрый доступ', 'quick')],
+            [callback('⭐ Premium и тарифы', 'premium')],
+            [callback('🛟 Поддержка', 'support')]
+          ]
+        }
       };
-    case 'premium':
+
+    case 'quick':
       return {
-        text: '⭐ Premium — будущие возможности\n\nПланируется однократная покупка без ежемесячного списания. Общий каталог будет доступен только для карт, обмен которыми разрешён правилами соответствующей программы.\n\nВ закрытом тесте покупки и доступ к реальным чужим картам выключены. Стоимость и дата запуска ещё не подтверждены.',
-        reply_markup: { inline_keyboard: [...back] }
+        text: '⚡ Открывайте карты быстрее\n\n'
+          + 'Кошелёк можно открыть одной ссылкой, а ссылку — назначить на жест телефона. '
+          + 'После этого до штрихкода останется одно нажатие.\n\n'
+          + 'Выберите, как вы хотите запускать «Карточку».'
+          + (quickButton.length ? '' : '\n\n⚠️ Ссылка быстрого запуска появится после публикации приложения.'),
+        reply_markup: {
+          inline_keyboard: [
+            [callback('👆 Двойное касание iPhone', 'backtap')],
+            [callback('📱 Кнопка действия iPhone', 'action')],
+            [callback('🤖 Android', 'android')],
+            ...(quickButton.length ? [quickButton] : []),
+            [toMenu]
+          ]
+        }
       };
-    case 'plans':
-      return {
-        text: '💰 Тарифы\n\nЛичный кошелёк — добавление и просмотр собственных скидочных карт.\n\nPremium — планируемый разовый доступ к разрешённым дополнительным функциям. Это не ежемесячная подписка.\n\nОплата сейчас недоступна: закрытый тест не принимает реальные платежи. Не оплачивайте доступ по сторонним ссылкам.',
-        reply_markup: { inline_keyboard: [...back] }
-      };
-    case 'action':
-      return {
-        text: '📱 Кнопка действия на iPhone\n\nНа совместимой модели создайте команду в приложении «Команды», которая открывает ссылку быстрого кошелька. Затем назначьте эту команду через настройки кнопки действия.\n\nОбычное двойное нажатие боковой кнопки iPhone переназначить на Telegram нельзя. Переход в Mini App может потребовать подтверждения iOS.' + (quickButton.length ? '\n\nСсылка быстрого запуска — кнопка ниже.' : '\n\nСсылка появится, когда тестовый сайт станет публично доступен.'),
-        reply_markup: { inline_keyboard: [...(quickButton.length ? [quickButton] : []), ...back] }
-      };
+
     case 'backtap':
       return {
-        text: '👆 Двойное касание сзади iPhone\n\n1. В «Командах» создайте команду «Открыть URL» со ссылкой на быстрый кошелёк.\n2. Откройте Настройки → Универсальный доступ → Касание → Касание задней панели.\n3. Выберите «Двойное касание» и назначьте созданную команду.\n\nНа Android похожие жесты зависят от модели. Не все устройства позволяют открыть именно ссылку Mini App. iOS также может запросить подтверждение.' + (quickButton.length ? '\n\nСсылка быстрого запуска — кнопка ниже.' : '\n\nСсылка появится после публикации приложения.'),
-        reply_markup: { inline_keyboard: [...(quickButton.length ? [quickButton] : []), ...back] }
+        text: '👆 Двойное касание задней панели iPhone\n\n'
+          + '1. Откройте «Команды» → «+» → «Добавить действие».\n'
+          + '2. Выберите «Открыть URL» и вставьте ссылку быстрого запуска.\n'
+          + '3. Назовите команду «Карточка» и сохраните.\n'
+          + '4. Настройки → Универсальный доступ → Касание → Касание задней панели → Двойное касание → «Карточка».\n\n'
+          + 'Названия пунктов отличаются в разных версиях iOS. iOS может показать подтверждение открытия ссылки — это отдельный шаг, обойти его нельзя.',
+        reply_markup: { inline_keyboard: [...(quickButton.length ? [quickButton] : []), [toQuick, toMenu]] }
       };
+
+    case 'action':
+      return {
+        text: '📱 Кнопка «Действие» на iPhone\n\n'
+          + '1. Создайте ту же команду «Карточка» с действием «Открыть URL».\n'
+          + '2. Настройки → Кнопка «Действие».\n'
+          + '3. Пролистайте до «Быстрая команда», нажмите «Выбрать» и укажите «Карточка».\n\n'
+          + 'Кнопка «Действие» есть не на всех моделях. Двойное нажатие обычной боковой кнопки переназначить нельзя.',
+        reply_markup: { inline_keyboard: [...(quickButton.length ? [quickButton] : []), [toQuick, toMenu]] }
+      };
+
+    case 'android':
+      return {
+        text: '🤖 Быстрый запуск на Android\n\n'
+          + '• Надёжный способ: откройте ссылку в браузере и выберите «Добавить на главный экран» — получится ярлык в одно нажатие.\n'
+          + '• Pixel: Настройки → Система → Жесты → Quick Tap.\n'
+          + '• Samsung: Настройки → Дополнительные функции → Боковая кнопка → Двойное нажатие.\n\n'
+          + 'Системные жесты Android часто умеют запускать только приложение, а не конкретную ссылку. Если жест открывает просто Telegram — используйте ярлык на главном экране.',
+        reply_markup: { inline_keyboard: [...(quickButton.length ? [quickButton] : []), [toQuick, toMenu]] }
+      };
+
+    case 'premium':
+    case 'plans':
+      return {
+        text: '⭐ Premium и тарифы\n\n'
+          + 'Сейчас бесплатно и останется бесплатным: свой кошелёк, добавление карт, поиск, штрихкоды и недавние карты. '
+          + 'Ничего из этого не станет платным.\n\n'
+          + 'Premium пока в разработке. Планируется однократная покупка, а не ежемесячная подписка. '
+          + 'Стоимость уточняется, дата запуска не определена.\n\n'
+          + 'Обмен картами будет добровольным: карта публикуется только по вашему решению. '
+          + 'Начисляются ли бонусы за чужие покупки, зависит от правил конкретного магазина — обещать их нельзя.\n\n'
+          + '💳 Оплата отключена: закрытый тест не принимает реальные платежи. Не оплачивайте доступ по сторонним ссылкам.',
+        reply_markup: { inline_keyboard: [[toMenu]] }
+      };
+
     case 'support':
       return {
-        text: safeSupport
-          ? '🛟 Поддержка «Карточки»\n\nНажмите кнопку ниже, чтобы обратиться в поддержку. Не отправляйте пароли, токены и полные номера карт.'
-          : '🛟 Поддержка «Карточки»\n\nКонтакт поддержки пока не подключён. Мы не будем обещать ответ на сообщения, которые сейчас некуда доставить. Не отправляйте пароли, токены и номера карт.',
-        reply_markup: { inline_keyboard: [...(safeSupport ? [[{ text: 'Написать в поддержку', url: supportUrl }]] : []), ...back] }
+        text: hasSupport
+          ? '🛟 Поддержка «Карточки»\n\n'
+            + 'Нажмите кнопку ниже, чтобы написать в поддержку.\n\n'
+            + 'Не отправляйте пароли, коды из писем и полные номера карт — они не нужны для помощи.'
+          : '🛟 Поддержка «Карточки»\n\n'
+            + 'Контакт поддержки пока не подключён, поэтому бот не обещает ответ на сообщения, которые некуда доставить.\n\n'
+            + 'Чтобы включить раздел, задайте в секретах Edge Function переменную TELEGRAM_SUPPORT_URL со ссылкой вида https://t.me/<аккаунт>.\n\n'
+            + 'Не отправляйте пароли, коды из писем и полные номера карт.',
+        reply_markup: {
+          inline_keyboard: [
+            ...(hasSupport ? [[{ text: '✍️ Написать в поддержку', url: supportUrl }]] : []),
+            [toMenu]
+          ]
+        }
       };
+
     default:
-      return onboardingPage('home', { appUrl, quickUrl, supportUrl, available });
+      return onboardingPage('home', { appUrl, quickUrl, supportUrl, available, returning });
   }
 }
