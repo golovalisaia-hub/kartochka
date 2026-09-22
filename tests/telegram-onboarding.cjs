@@ -17,27 +17,42 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
   const home = onboardingPage('home', links);
   assert.match(home.text, /Карточка/);
   assert.match(home.text, /вымышленные карты/);
-  assert.equal(home.reply_markup.inline_keyboard[0][0].callback_data, 'kartochka:features');
+  // The welcome screen leads straight into the app rather than into another menu step.
+  assert.equal(home.reply_markup.inline_keyboard[0][0].web_app.url, `${links.appUrl}?startapp=add`);
   assert.equal(onboardingAction('kartochka:features'), 'features');
   assert.equal(onboardingAction('kartochka:unknown'), null);
   assert.equal(onboardingAction('other:features'), null);
 
-  // The main menu is the four sections the product asks for — no more, no fewer.
+  // The welcome screen carries the action grid: one column, one column, then two pairs.
+  const main = onboardingPage('home', links);
+  const rows = main.reply_markup.inline_keyboard;
+  assert.deepEqual(rows.map(row => row.length), [1, 1, 2, 2], 'button grid layout');
+  assert.match(rows[0][0].text, /Добавить карту/);
+  assert.match(rows[1][0].text, /Открыть приложение/);
+  assert.match(rows[2][0].text, /Кнопка действия/);
+  assert.match(rows[2][1].text, /Двойной тап/);
+  assert.match(rows[3][0].text, /Тарифы и Premium/);
+  assert.match(rows[3][1].text, /Поддержка/);
+
+  // "Добавить карту" opens the same Mini App on its add-card route; "Открыть приложение"
+  // opens the wallet itself. Both are Web App buttons, not plain links.
+  assert.equal(rows[1][0].web_app.url, links.appUrl);
+  const addUrl = new URL(rows[0][0].web_app.url);
+  assert.equal(addUrl.origin + addUrl.pathname, links.appUrl);
+  assert.equal(addUrl.searchParams.get('startapp'), 'add');
+
+  // `features` is the same screen, so buttons in older messages still land somewhere real.
   const features = onboardingPage('features', links);
-  const buttons = features.reply_markup.inline_keyboard.flat();
-  assert.equal(buttons.find(button => button.web_app)?.web_app.url, links.appUrl);
-  assert.equal(buttons.length, 4, 'main menu must offer exactly four sections');
-  assert.match(buttons[0].text, /Открыть приложение/);
-  assert.match(buttons[1].text, /Быстрый доступ/);
-  assert.match(buttons[2].text, /Premium и тарифы/);
-  assert.match(buttons[3].text, /Поддержка/);
-  for (const section of ['quick', 'premium', 'support']) {
+  assert.equal(features.text, main.text);
+  const buttons = rows.flat();
+  for (const section of ['action', 'backtap', 'premium', 'support']) {
     assert(buttons.some(button => button.callback_data === `kartochka:${section}`), section);
   }
   // Every capability listed must exist in the app today.
-  for (const promise of [/кошельк/i, /камер/i, /поиск|Находит/i, /штрихкод/i, /недавн/i, /жест/i]) {
-    assert.match(features.text, promise);
+  for (const promise of [/скидочные карты/i, /фотографии/i, /найти/i, /штрихкод/i, /последние открытые/i, /системными функциями/i]) {
+    assert.match(main.text, promise);
   }
+  assert.doesNotMatch(main.text, /SGX|Planner/i, 'no reference material may leak into our copy');
 
   // Quick access is its own screen with the four documented ways in, plus a way back.
   const quick = onboardingPage('quick', links);
@@ -47,13 +62,17 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
     assert(quickButtons.some(button => button.callback_data === `kartochka:${section}`), section);
   }
   assert.equal(quickButtons.find(button => button.url)?.url, links.quickUrl, 'Недавние карты must use the quick link');
-  assert(quickButtons.some(button => button.callback_data === 'kartochka:features'), 'quick screen needs a way back');
+  assert(quickButtons.some(button => button.callback_data === 'kartochka:home'), 'quick screen needs a way back');
 
-  // Every leaf screen can reach both its parent and the main menu.
+  // Every information screen offers a way back to the main screen, and the gesture guides
+  // each carry a working link to the compact wallet.
+  for (const section of ['backtap', 'action', 'android', 'premium', 'plans', 'support', 'quick']) {
+    const leaf = onboardingPage(section, links).reply_markup.inline_keyboard.flat();
+    assert(leaf.some(button => button.callback_data === 'kartochka:home'), `${section} must reach the main menu`);
+  }
   for (const section of ['backtap', 'action', 'android']) {
     const leaf = onboardingPage(section, links).reply_markup.inline_keyboard.flat();
-    assert(leaf.some(button => button.callback_data === 'kartochka:quick'), `${section} must return to quick access`);
-    assert(leaf.some(button => button.callback_data === 'kartochka:features'), `${section} must reach the main menu`);
+    assert.equal(leaf.find(button => button.url)?.url, links.quickUrl, `${section} needs the compact wallet link`);
   }
   assert.match(onboardingPage('android', links).text, /Android|Pixel|Samsung/);
   // No screen may claim a Mini App can hijack a hardware button.
@@ -87,15 +106,8 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
   assert.equal(onboardingPage('support', { ...links, supportUrl: 'https://evil.example/chat' })
     .reply_markup.inline_keyboard.flat().some(button => button.url), false);
 
-  // A returning user is offered the wallet immediately instead of the tour.
-  const fresh = onboardingPage('home', links);
-  assert.equal(fresh.reply_markup.inline_keyboard.flat().some(button => button.web_app), false);
-  assert.match(fresh.reply_markup.inline_keyboard[0][0].text, /Начать/);
-  const known = onboardingPage('home', { ...links, returning: true });
-  assert.equal(known.reply_markup.inline_keyboard[0][0].web_app.url, links.appUrl);
-
   // Nothing offers a launch button while the app URL is not serving the app.
-  const unavailable = onboardingPage('features', { ...links, available: false });
+  const unavailable = onboardingPage('home', { ...links, available: false });
   assert.equal(unavailable.reply_markup.inline_keyboard.flat().some(button => button.url || button.web_app), false);
   assert.match(unavailable.text, /недоступно/);
   for (const section of ['action', 'backtap', 'android', 'quick']) {
@@ -107,16 +119,14 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
     const built = onboardingPage(section, links);
     assert(built.text.length <= 1024, `${section} photo caption exceeds Telegram limit`);
     assert(built.reply_markup.inline_keyboard.every(row => row.length <= 2), `${section} crams a row with buttons`);
-    if (section !== 'home') {
-      assert(built.reply_markup.inline_keyboard.flat().some(button => button.callback_data), `${section} has no way out`);
-    }
+    assert(built.reply_markup.inline_keyboard.flat().some(button => button.callback_data), `${section} has no way out`);
   }
   console.log('PASS onboarding screens, four-section menu, quick-access tree, truthful plans and safe links');
 
   // ---- bot integration: the update handler against a mocked Telegram API ----
   let server = null;
   const calls = [];
-  let photoWorks = false;      // whether Telegram accepts the welcome picture
+  let coverWorks = false;      // whether Telegram accepts the welcome cover media
   let editResult = { ok: true };
   const env = {
     SUPABASE_URL: 'https://test-project.supabase.co',
@@ -144,8 +154,8 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
       calls.push({ method, payload });
       if (method === 'getMe') return Response.json({ ok: true, result: { username: 'KartochkaWalletBot' } });
       if (method === 'getWebhookInfo') return Response.json({ ok: true, result: { url: `${env.SUPABASE_URL}/functions/v1/telegram` } });
-      // Telegram refuses a photo it cannot fetch, exactly as it would for a missing file.
-      if (method === 'sendPhoto' && !photoWorks) {
+      // Telegram refuses media it cannot fetch, exactly as it would for a missing file.
+      if ((method === 'sendPhoto' || method === 'sendAnimation') && !coverWorks) {
         return Response.json({ ok: false, description: 'Bad Request: wrong file identifier' }, { status: 400 });
       }
       if ((method === 'editMessageText' || method === 'editMessageCaption') && !editResult.ok) {
@@ -178,61 +188,76 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
       assert.equal(calls.length, 0);
     });
 
-    await check('the owner picture is used when Telegram accepts it', async () => {
+    // Runs while the module has not yet looked for cover media, so the whole ladder is visible.
+    await check('the welcome tries animation, then photo, then plain text', async () => {
       reset();
-      photoWorks = true;
       assert.equal((await dispatch(message('/start'))).status, 200);
-      const photo = calls.find(item => item.method === 'sendPhoto');
-      assert.ok(photo, 'a welcome picture must be attempted');
-      assert.match(photo.payload.photo, /welcome\.png$/);
-      assert.match(photo.payload.caption, /все скидочные карты/);
-      assert.equal(calls.some(item => item.method === 'sendMessage'), false, 'no duplicate text welcome');
-      photoWorks = false;
+      const order = calls.map(item => item.method).filter(method => /^send/.test(method));
+      assert.equal(order[0], 'sendAnimation', 'an animation is preferred over a still picture');
+      assert.ok(order.includes('sendPhoto'), 'a still picture is the second choice');
+      assert.equal(order.at(-1), 'sendMessage', 'with no media the welcome still arrives');
+
+      // The caption and the grid ride along with the media, not only with the text message.
+      const animation = calls.find(item => item.method === 'sendAnimation');
+      assert.match(animation.payload.animation, /welcome\.mp4$/, 'welcome.mp4 in the repo is enough');
+      assert.match(animation.payload.caption, /все скидочные карты в одном месте/);
+      assert.ok(animation.payload.caption.length <= 1024, 'caption must fit under the animation');
+      assert.deepEqual(animation.payload.reply_markup.inline_keyboard.map(row => row.length), [1, 1, 2, 2]);
     });
 
-    await check('/start greets a new user with the tour button', async () => {
+    await check('the welcome grid carries working launch buttons', async () => {
       reset();
-      knownAccounts = [];
       assert.equal((await dispatch(message('/start'))).status, 200);
       const welcome = calls.find(item => item.method === 'sendMessage');
       assert.match(welcome.payload.text, /все скидочные карты в одном месте/);
-      const keys = welcome.payload.reply_markup.inline_keyboard.flat();
-      assert.equal(keys.at(-1).callback_data, 'kartochka:features');
-      assert.equal(keys.some(button => button.web_app), false, 'a new user is not pushed straight into the app');
+      const rows = welcome.payload.reply_markup.inline_keyboard;
+      assert.deepEqual(rows.map(row => row.length), [1, 1, 2, 2]);
+      assert.equal(new URL(rows[0][0].web_app.url).searchParams.get('startapp'), 'add');
+      assert.equal(rows[1][0].web_app.url, env.TELEGRAM_WEB_APP_URL);
     });
 
-    await check('/start offers a returning user the wallet straight away', async () => {
-      reset();
-      knownAccounts = [{ telegram_user_id: 500 }];
-      assert.equal((await dispatch(message('/start'))).status, 200);
-      const welcome = calls.find(item => item.method === 'sendMessage');
-      assert.equal(welcome.payload.reply_markup.inline_keyboard[0][0].web_app.url, env.TELEGRAM_WEB_APP_URL);
-      knownAccounts = [];
-    });
-
-    await check('a missing picture falls back to text instead of failing', async () => {
+    await check('a repeated /start does not hammer Telegram with media retries', async () => {
       reset();
       assert.equal((await dispatch(message('/start'))).status, 200);
-      assert.ok(calls.find(item => item.method === 'sendMessage'), 'the welcome must still arrive');
+      assert.equal((await dispatch(message('/start'))).status, 200);
+      assert.equal(calls.filter(item => item.method === 'sendMessage').length, 2, 'one welcome per /start');
+      assert.equal(calls.some(item => /^send(Animation|Photo)$/.test(item.method)), false,
+        'media known to be missing must not be retried on every /start');
     });
 
-    await check('«Начать» edits the same message into the main menu', async () => {
+    await check('the cover is used once Telegram accepts it', async () => {
       reset();
-      assert.equal((await dispatch(press('kartochka:features'))).status, 200);
+      coverWorks = true;
+      // Past the negative-cache window the bot looks again, so media added later is picked up.
+      const realNow = Date.now;
+      Date.now = () => realNow() + 400000;
+      try {
+        assert.equal((await dispatch(message('/start'))).status, 200);
+      } finally { Date.now = realNow; }
+      const cover = calls.find(item => item.method === 'sendAnimation');
+      assert.ok(cover, 'the animation must be retried after the window');
+      assert.equal(calls.some(item => item.method === 'sendMessage'), false, 'no duplicate text welcome');
+      coverWorks = false;
+    });
+
+    await check('a section edits the same message instead of sending a new one', async () => {
+      reset();
+      assert.equal((await dispatch(press('kartochka:premium'))).status, 200);
       assert.ok(calls.find(item => item.method === 'answerCallbackQuery'), 'the button must be acknowledged');
       const edited = calls.find(item => item.method === 'editMessageText');
-      assert.match(edited.payload.text, /Что умеет/);
+      assert.match(edited.payload.text, /Premium и тарифы/);
       assert.equal(calls.some(item => item.method === 'sendMessage'), false, 'no extra message per step');
-      const keys = edited.payload.reply_markup.inline_keyboard.flat();
-      assert.equal(keys.length, 4);
-      assert.ok(keys[0].web_app);
+      assert.ok(edited.payload.reply_markup.inline_keyboard.flat()
+        .some(button => button.callback_data === 'kartochka:home'), 'every section returns home');
     });
 
-    await check('a welcome photo is edited as a caption, not as text', async () => {
-      reset();
-      assert.equal((await dispatch(press('kartochka:features', { photo: [{ file_id: 'x' }] }))).status, 200);
-      assert.ok(calls.find(item => item.method === 'editMessageCaption'), 'a photo message needs its caption edited');
-      assert.equal(calls.some(item => item.method === 'editMessageText'), false);
+    await check('a welcome animation is edited as a caption, not as text', async () => {
+      for (const shape of [{ photo: [{ file_id: 'x' }] }, { animation: { file_id: 'a' } }]) {
+        reset();
+        assert.equal((await dispatch(press('kartochka:premium', shape))).status, 200);
+        assert.ok(calls.find(item => item.method === 'editMessageCaption'), `caption edit for ${Object.keys(shape)[0]}`);
+        assert.equal(calls.some(item => item.method === 'editMessageText'), false);
+      }
     });
 
     await check('every menu button reaches a real screen', async () => {
@@ -278,19 +303,19 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
       assert.equal(calls.some(item => item.method.startsWith('edit')), false);
     });
 
-    await check('/menu opens the main menu directly', async () => {
+    await check('/menu opens the main screen directly', async () => {
       reset();
       assert.equal((await dispatch(message('/menu'))).status, 200);
       const sent = calls.find(item => item.method === 'sendMessage');
-      assert.match(sent.payload.text, /Что умеет/);
-      assert.equal(sent.payload.reply_markup.inline_keyboard.flat().length, 4);
+      assert.match(sent.payload.text, /все скидочные карты в одном месте/);
+      assert.deepEqual(sent.payload.reply_markup.inline_keyboard.map(row => row.length), [1, 1, 2, 2]);
     });
 
     await check('a quick deep link opens the wallet without the presentation', async () => {
       reset();
       assert.equal((await dispatch(message('/start quick'))).status, 200);
       const sent = calls.find(item => item.method === 'sendMessage');
-      assert.doesNotMatch(sent.payload.text, /Что умеет|Начать/, 'quick launch must skip the tour');
+      assert.doesNotMatch(sent.payload.text, /Что умеет «Карточка»|Больше не нужно искать/, 'quick launch must skip the presentation');
       assert.ok(sent.payload.reply_markup.inline_keyboard.flat().some(button => button.web_app || button.url));
       assert.equal(calls.some(item => item.method === 'sendPhoto'), false, 'quick launch must not send the welcome picture');
     });
@@ -320,6 +345,13 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
       for (const command of ['start', 'menu', 'support', 'plans']) {
         assert.ok(commands.includes(command), `/${command} must be registered`);
       }
+      // The card Telegram shows before Start is published through the documented methods.
+      const description = calls.find(item => item.method === 'setMyDescription').payload.description;
+      assert.match(description, /все скидочные карты в одном месте/i);
+      assert.ok(description.length <= 512, 'setMyDescription caps at 512 characters');
+      const short = calls.find(item => item.method === 'setMyShortDescription').payload.short_description;
+      assert.ok(short.length <= 120, 'setMyShortDescription caps at 120 characters');
+      assert.doesNotMatch(description + short, /SGX|Planner/i);
     });
 
     await check('payments stay switched off', async () => {

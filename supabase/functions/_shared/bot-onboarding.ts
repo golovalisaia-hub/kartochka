@@ -24,13 +24,27 @@ function callback(text, page) {
 const QUICK_LINK = /^https:\/\/t\.me\/[a-zA-Z0-9_]{5,32}\?startapp=quick&mode=compact$/;
 const SUPPORT_LINK = /^https:\/\/(t\.me|telegram\.me)\/[a-zA-Z0-9_]{5,32}(?:\?.*)?$/;
 
+// The Mini App reads `startapp` from its own URL, so a Web App button can ask for a screen.
+// It selects a screen only — authentication is unchanged and happens inside the app.
+function withRoute(appUrl, route) {
+  try {
+    const url = new URL(appUrl);
+    url.searchParams.set('startapp', route);
+    return url.href;
+  } catch (_) { return appUrl; }
+}
+
 export function onboardingPage(page, {
-  appUrl = '', quickUrl = '', supportUrl = '', available = false, returning = false
+  appUrl = '', quickUrl = '', supportUrl = '', available = false
 } = {}) {
   // A launch button is only ever offered once the URL has been proven to serve the app.
   // A button that opens somebody's login page is worse than no button at all.
-  const appButton = available && /^https:\/\//i.test(appUrl)
+  const usable = available && /^https:\/\//i.test(appUrl);
+  const appButton = usable
     ? [{ text: '💳 Открыть приложение', web_app: { url: appUrl } }]
+    : [];
+  const addButton = usable
+    ? [{ text: '➕ Добавить карту', web_app: { url: withRoute(appUrl, 'add') } }]
     : [];
   const quickButton = available && QUICK_LINK.test(quickUrl)
     ? [{ text: '⚡ Недавние карты', url: quickUrl }]
@@ -38,43 +52,34 @@ export function onboardingPage(page, {
   const hasSupport = SUPPORT_LINK.test(supportUrl);
   const unavailable = '\n\n⚠️ Тестовое приложение пока недоступно по публичному адресу — кнопка запуска появится после публикации.';
 
-  const toMenu = callback('⌂ Главное меню', 'features');
+  const toMenu = callback('⌂ Главное меню', 'home');
   const toQuick = callback('← Быстрый доступ', 'quick');
 
   switch (page) {
+    // The screen Telegram shows right after Start: caption under the cover animation plus
+    // the action grid. `features` is the same screen, kept so that buttons already sitting
+    // in users' chats keep working.
     case 'home':
-      return {
-        text: '💳 Карточка — все скидочные карты в одном месте.\n\n'
-          + 'Храните карты любимых магазинов, находите нужную за секунды и открывайте её прямо в Telegram. '
-          + 'Больше не нужно искать карту среди множества приложений.\n\n'
-          + 'Идёт закрытый тест: добавляйте только вымышленные карты, реальные платежи отключены.'
-          + (returning ? '\n\nВы уже пользуетесь «Карточкой» — можно сразу открыть кошелёк.' : ''),
-        reply_markup: {
-          inline_keyboard: [
-            // A returning user should not have to sit through the tour again.
-            ...(returning && appButton.length ? [appButton] : []),
-            [callback(returning ? '📖 О возможностях' : '🚀 Начать', 'features')]
-          ]
-        }
-      };
-
     case 'features':
       return {
-        text: '✨ Что умеет «Карточка»?\n\n'
-          + '• Хранит все скидочные карты в одном кошельке.\n'
-          + '• Добавляет карту вручную, камерой или по фотографии.\n'
-          + '• Находит нужный магазин поиском.\n'
-          + '• Показывает QR-код или штрихкод кассиру.\n'
-          + '• Помнит недавно открытые карты.\n'
-          + '• Запускается жестом телефона через Telegram.\n\n'
-          + 'Выберите раздел ниже.'
+        text: 'КАРТОЧКА — все скидочные карты в одном месте.\n\n'
+          + 'Больше не нужно искать карты по разным приложениям. '
+          + 'Добавьте карту один раз — и открывайте её прямо в Telegram.\n\n'
+          + 'Что умеет «Карточка»:\n'
+          + '💳 Хранит скидочные карты любимых магазинов.\n'
+          + '📷 Добавляет карту по фотографии или вручную.\n'
+          + '🔎 Помогает быстро найти нужный магазин.\n'
+          + '⚡ Показывает последние открытые карты.\n'
+          + '📱 Запускается системными функциями смартфона.\n\n'
+          + 'Одна кнопка — и штрихкод готов для кассы.\n\n'
+          + 'Идёт закрытый тест: добавляйте только вымышленные карты, оплата отключена.'
           + (available ? '' : unavailable),
         reply_markup: {
           inline_keyboard: [
+            ...(addButton.length ? [addButton] : []),
             ...(appButton.length ? [appButton] : []),
-            [callback('⚡ Быстрый доступ', 'quick')],
-            [callback('⭐ Premium и тарифы', 'premium')],
-            [callback('🛟 Поддержка', 'support')]
+            [callback('⚡ Кнопка действия', 'action'), callback('👆 Двойной тап', 'backtap')],
+            [callback('⭐ Тарифы и Premium', 'premium'), callback('🛟 Поддержка', 'support')]
           ]
         }
       };
@@ -105,7 +110,7 @@ export function onboardingPage(page, {
           + '3. Назовите команду «Карточка» и сохраните.\n'
           + '4. Настройки → Универсальный доступ → Касание → Касание задней панели → Двойное касание → «Карточка».\n\n'
           + 'Названия пунктов отличаются в разных версиях iOS. iOS может показать подтверждение открытия ссылки — это отдельный шаг, обойти его нельзя.',
-        reply_markup: { inline_keyboard: [...(quickButton.length ? [quickButton] : []), [toQuick, toMenu]] }
+        reply_markup: { inline_keyboard: [...(quickButton.length ? [quickButton] : []), [callback('🤖 Android', 'android'), toMenu]] }
       };
 
     case 'action':
@@ -115,7 +120,7 @@ export function onboardingPage(page, {
           + '2. Настройки → Кнопка «Действие».\n'
           + '3. Пролистайте до «Быстрая команда», нажмите «Выбрать» и укажите «Карточка».\n\n'
           + 'Кнопка «Действие» есть не на всех моделях. Двойное нажатие обычной боковой кнопки переназначить нельзя.',
-        reply_markup: { inline_keyboard: [...(quickButton.length ? [quickButton] : []), [toQuick, toMenu]] }
+        reply_markup: { inline_keyboard: [...(quickButton.length ? [quickButton] : []), [callback('🤖 Android', 'android'), toMenu]] }
       };
 
     case 'android':
@@ -161,6 +166,6 @@ export function onboardingPage(page, {
       };
 
     default:
-      return onboardingPage('home', { appUrl, quickUrl, supportUrl, available, returning });
+      return onboardingPage('home', { appUrl, quickUrl, supportUrl, available });
   }
 }

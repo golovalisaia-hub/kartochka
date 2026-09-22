@@ -31,40 +31,67 @@ async function appLaunchOptions(){
 }
 
 /*
- * The owner's welcome picture.
+ * The owner's cover media for the welcome message.
  *
- * Nothing is generated or substituted here. Three sources are tried in order, and the first
- * one Telegram accepts is remembered so later /start calls do not retry the others:
- *   1. TELEGRAM_WELCOME_PHOTO_FILE_ID — a photo already uploaded to this bot;
- *   2. TELEGRAM_WELCOME_PHOTO_URL — an explicit public HTTPS image;
- *   3. <app>/welcome.png — dropping welcome.png into the repository is enough.
- * If none works, the welcome is sent as plain text rather than with a stand-in image.
+ * Nothing is generated or substituted here — no stand-in artwork is ever invented. Candidates
+ * are tried in order and the first one Telegram accepts is remembered:
+ *
+ *   sendAnimation  1. TELEGRAM_WELCOME_ANIMATION_FILE_ID — GIF/MP4 already uploaded to this bot
+ *                  2. TELEGRAM_WELCOME_ANIMATION_URL     — public HTTPS .gif or .mp4
+ *                  3. <app>/welcome.mp4, <app>/welcome.gif — just drop the file in the repo
+ *   sendPhoto      4. TELEGRAM_WELCOME_PHOTO_FILE_ID
+ *                  5. TELEGRAM_WELCOME_PHOTO_URL
+ *                  6. <app>/welcome.png
+ *
+ * With none of them available the welcome is sent as plain text. Telegram renders an
+ * animation at its own aspect ratio, so the file is passed through untouched and never
+ * re-encoded or cropped here.
  */
-let welcomeChoice;              // undefined = not looked yet, string = works, null = none found
-let welcomeCheckedAt=0;
-const WELCOME_RETRY_MS=300000;  // re-look periodically so a picture added later is picked up
-async function welcomeCandidates(appUrl){
+let coverChoice;                // undefined = not looked yet, {method,media} = works, null = none
+let coverCheckedAt=0;
+const COVER_RETRY_MS=300000;    // re-look periodically so media added later is picked up
+function coverCandidates(appUrl){
   const out=[];
-  const fileId=Deno.env.get('TELEGRAM_WELCOME_PHOTO_FILE_ID')||'';
-  if(fileId)out.push(fileId);
-  const explicit=Deno.env.get('TELEGRAM_WELCOME_PHOTO_URL')||'';
-  if(/^https:\/\//i.test(explicit))out.push(explicit);
-  if(/^https:\/\//i.test(appUrl)){try{out.push(new URL('welcome.png',appUrl).href)}catch(_){}}
+  const push=(method,media)=>{if(media)out.push({method,media})};
+  push('sendAnimation',Deno.env.get('TELEGRAM_WELCOME_ANIMATION_FILE_ID')||'');
+  const animationUrl=Deno.env.get('TELEGRAM_WELCOME_ANIMATION_URL')||'';
+  if(/^https:\/\//i.test(animationUrl))push('sendAnimation',animationUrl);
+  push('sendPhoto',Deno.env.get('TELEGRAM_WELCOME_PHOTO_FILE_ID')||'');
+  const photoUrl=Deno.env.get('TELEGRAM_WELCOME_PHOTO_URL')||'';
+  if(/^https:\/\//i.test(photoUrl))push('sendPhoto',photoUrl);
+  if(/^https:\/\//i.test(appUrl)){
+    for(const [method,name] of [['sendAnimation','welcome.mp4'],['sendAnimation','welcome.gif'],['sendPhoto','welcome.png']]){
+      try{push(method,new URL(name,appUrl).href)}catch(_){}
+    }
+  }
   return out;
 }
-async function sendWelcomePhoto(chatId,appUrl,caption,replyMarkup){
-  // A known-bad result is remembered only for a while: the owner may add the picture at any
+async function sendWelcomeCover(chatId,appUrl,caption,replyMarkup){
+  // A known-bad result is remembered only for a while: the owner may add the file at any
   // time, and a warm instance must not keep sending the text welcome forever afterwards.
-  if(welcomeChoice===null&&Date.now()-welcomeCheckedAt<WELCOME_RETRY_MS)return null;
-  const candidates=welcomeChoice?[welcomeChoice]:await welcomeCandidates(appUrl);
-  for(const photo of candidates){
-    const sent=await tryBot('sendPhoto',{chat_id:chatId,photo,caption,reply_markup:replyMarkup});
-    if(sent.ok){welcomeChoice=photo;return sent.result}
+  if(coverChoice===null&&Date.now()-coverCheckedAt<COVER_RETRY_MS)return null;
+  const candidates=coverChoice?[coverChoice]:coverCandidates(appUrl);
+  for(const candidate of candidates){
+    const key=candidate.method==='sendAnimation'?'animation':'photo';
+    const sent=await tryBot(candidate.method,{chat_id:chatId,[key]:candidate.media,caption,reply_markup:replyMarkup});
+    if(sent.ok){coverChoice=candidate;return sent.result}
   }
-  welcomeChoice=null;
-  welcomeCheckedAt=Date.now();
+  coverChoice=null;
+  coverCheckedAt=Date.now();
   return null;
 }
+/*
+ * The card Telegram shows BEFORE the user presses Start ("Что умеет этот бот?").
+ * setMyDescription accepts up to 512 characters and setMyShortDescription up to 120.
+ * The picture on that card is NOT settable through the Bot API — only BotFather's
+ * /setdescriptionpic can change it, so it is left alone here and documented instead.
+ */
+const BOT_DESCRIPTION='«Карточка» — все скидочные карты в одном месте.\n\n'
+  +'Храните карты любимых магазинов, быстро находите нужную и показывайте QR-код или штрихкод прямо на кассе. '
+  +'Добавляйте карты по фотографии или вручную, открывайте недавно использованные карты за секунды.\n\n'
+  +'Всё внутри Telegram.';
+const BOT_SHORT_DESCRIPTION='Все скидочные карты в одном месте. Штрихкод для кассы — за одно нажатие.';
+
 // Deep link straight to the wallet: no welcome, no tour, just a way in.
 async function sendQuickLaunch(chatId){
   const launch=await appLaunchOptions();
@@ -81,9 +108,9 @@ async function sendQuickLaunch(chatId){
 }
 
 const CAPTION_LIMIT=1024;
-async function showIntro(chatId,page,{messageId=null,hasPhoto=false,initial=false,returning=false}={}){
+async function showIntro(chatId,page,{messageId=null,hasPhoto=false,initial=false}={}){
   const launch=await appLaunchOptions();
-  const data=onboardingPage(page,{...launch,returning});
+  const data=onboardingPage(page,launch);
   if(messageId!==null){
     // A photo caption is capped at 1024 characters; a longer page has to become its own
     // message instead of being silently truncated.
@@ -100,24 +127,17 @@ async function showIntro(chatId,page,{messageId=null,hasPhoto=false,initial=fals
     // user always gets a working screen instead of a dead button.
   }
   if(initial){
-    const sent=await sendWelcomePhoto(chatId,launch.appUrl,data.text,data.reply_markup);
+    const sent=await sendWelcomeCover(chatId,launch.appUrl,data.text,data.reply_markup);
     if(sent)return sent;
   }
   return bot('sendMessage',{chat_id:chatId,text:data.text,reply_markup:data.reply_markup});
 }
 
-// Whether this Telegram user already has a linked wallet account, so the welcome can offer
-// the wallet straight away instead of making them walk through the tour again. Read-only,
-// and it never reveals anything about any other user.
-async function isReturningUser(telegramUserId){
-  if(!Number.isSafeInteger(telegramUserId)||telegramUserId<=0||!U||!K)return false;
-  try{
-    const rows=await admin('/rest/v1/telegram_accounts?select=telegram_user_id&telegram_user_id=eq.'+telegramUserId);
-    return Array.isArray(rows)&&rows.length>0;
-  }catch(_){return false}
-}
 // Read-only diagnostics never return token values.
-async function setup(r){if(!secret(r))return J({error:'Unauthorized'},401);const w=Deno.env.get('TELEGRAM_WEB_APP_URL')||'';if(!/^https:\/\//i.test(w))throw Error('Telegram web app URL is missing');const health=await inspectWebAppUrl(w);if(!health.ok){const e=Error('WEB_APP_URL_UNAVAILABLE');e.reason=health.reason;e.hint=health.hint;throw e}const url=U.replace(/\/+$/,'')+'/functions/v1/telegram';await bot('setWebhook',{url,secret_token:Deno.env.get('TELEGRAM_WEBHOOK_SECRET'),allowed_updates:['message','callback_query','pre_checkout_query'],drop_pending_updates:false});await bot('setMyCommands',{commands:[{command:'start',description:'Знакомство с Карточкой'},{command:'menu',description:'Главное меню'},{command:'quick',description:'Быстрый доступ'},{command:'plans',description:'Premium и тарифы'},{command:'support',description:'Поддержка'}]});await bot('setChatMenuButton',{menu_button:{type:'web_app',text:'Открыть Карточку',web_app:{url:w}}});const x=await bot('getWebhookInfo',{});return{ok:true,webhook:{configured:x?.url===url,pending_update_count:Number(x?.pending_update_count||0),last_error_date:x?.last_error_date||null}}}
+async function setup(r){if(!secret(r))return J({error:'Unauthorized'},401);const w=Deno.env.get('TELEGRAM_WEB_APP_URL')||'';if(!/^https:\/\//i.test(w))throw Error('Telegram web app URL is missing');const health=await inspectWebAppUrl(w);if(!health.ok){const e=Error('WEB_APP_URL_UNAVAILABLE');e.reason=health.reason;e.hint=health.hint;throw e}const url=U.replace(/\/+$/,'')+'/functions/v1/telegram';await bot('setWebhook',{url,secret_token:Deno.env.get('TELEGRAM_WEBHOOK_SECRET'),allowed_updates:['message','callback_query','pre_checkout_query'],drop_pending_updates:false});await bot('setMyCommands',{commands:[{command:'start',description:'Знакомство с Карточкой'},{command:'menu',description:'Главное меню'},{command:'quick',description:'Быстрый доступ'},{command:'plans',description:'Тарифы и Premium'},{command:'support',description:'Поддержка'}]});
+  // Refuse silently is not an option: a failed description would leave the pre-Start card stale.
+  await bot('setMyDescription',{description:BOT_DESCRIPTION});
+  await bot('setMyShortDescription',{short_description:BOT_SHORT_DESCRIPTION});await bot('setChatMenuButton',{menu_button:{type:'web_app',text:'Открыть Карточку',web_app:{url:w}}});const x=await bot('getWebhookInfo',{});return{ok:true,webhook:{configured:x?.url===url,pending_update_count:Number(x?.pending_update_count||0),last_error_date:x?.last_error_date||null}}}
 async function diagnose(){const w=Deno.env.get('TELEGRAM_WEB_APP_URL')||'';const health=await inspectWebAppUrl(w);let hook=null;try{hook=await bot('getWebhookInfo',{})}catch(_){}let menu=null;try{menu=await bot('getChatMenuButton',{})}catch(_){}return{web_app_url:{present:Boolean(w),https:/^https:\/\//i.test(w),host:(()=>{try{return new URL(w).host}catch(_){return null}})(),serving_app:health.ok,reason:health.reason,hint:health.hint},secrets:{TELEGRAM_BOT_TOKEN:Boolean(Deno.env.get('TELEGRAM_BOT_TOKEN')),TELEGRAM_WEBHOOK_SECRET:Boolean(Deno.env.get('TELEGRAM_WEBHOOK_SECRET')),TELEGRAM_WEB_APP_URL:Boolean(w)},webhook:{url_matches:hook?.url===U.replace(/\/+$/,'')+'/functions/v1/telegram',pending_update_count:Number(hook?.pending_update_count||0),last_error_message:hook?.last_error_message||null},menu_button:{type:menu?.type||null,opens_app:menu?.type==='web_app'},payments:'disabled'}}
 
 Deno.serve(async r=>{
@@ -147,11 +167,9 @@ Deno.serve(async r=>{
         }else{
           // Acknowledge first: Telegram shows a spinner on the button until this arrives.
           await tryBot('answerCallbackQuery',{callback_query_id:query.id});
-          const returning=page==='home'?await isReturningUser(Number(query.from?.id)):false;
           await showIntro(query.message.chat.id,page,{
             messageId:query.message.message_id,
-            hasPhoto:Boolean(query.message.photo?.length),
-            returning
+            hasPhoto:Boolean(query.message.photo?.length||query.message.animation||query.message.video)
           });
         }
       }else if(u.message?.chat?.id&&u.message.chat.type==='private'){
@@ -161,7 +179,7 @@ Deno.serve(async r=>{
         if(start){
           // A deep link that means "just open the wallet" must not start the presentation.
           if(String(start[1]||'').toLowerCase()==='quick')await sendQuickLaunch(chatId);
-          else await showIntro(chatId,'home',{initial:true,returning:await isReturningUser(Number(u.message.from?.id))});
+          else await showIntro(chatId,'home',{initial:true});
         }
         else if(/^\/menu(?:@\w+)?\s*$/i.test(text))await showIntro(chatId,'features');
         else if(/^\/help(?:@\w+)?\s*$/i.test(text))await showIntro(chatId,'features');

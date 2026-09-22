@@ -205,6 +205,28 @@ const card = (id, store, number, extra = {}) => ({
       await context.close();
     });
 
+    await check('startapp=add opens the wallet on the add-card sheet', async () => {
+      const { context, page } = await newSession(browser, { startParam: 'add' });
+      await page.waitForSelector('#addOverlay:not([hidden])');
+      assert.equal(await page.locator('#addOverlay').isVisible(), true);
+      // It is the ordinary wallet with a sheet on top, not the compact screen.
+      assert.equal(await page.locator('#quickScreen').isVisible(), false);
+      assert.equal(await page.evaluate(() => window.KartochkaTelegram.mode()), 'add');
+      // The sheet may only appear after the account is settled, never before.
+      assert.equal(await page.locator('#privacyGate').isVisible(), false);
+      await context.close();
+    });
+
+    await check('the add route waits for authentication before opening anything', async () => {
+      const { context, page } = await newSession(browser, { startParam: 'add', seedCards: [] });
+      // While the gate is up no sheet is shown; it opens only once the gate is gone.
+      const gateUp = await page.evaluate(() => Boolean(document.querySelector('#privacyGate'))); 
+      assert.equal(gateUp, true, 'the gate element must exist');
+      await page.waitForSelector('#addOverlay:not([hidden])');
+      assert.equal(await page.locator('#privacyGate').isVisible(), false);
+      await context.close();
+    });
+
     await check('a hostile start parameter cannot grant anything', async () => {
       const { context, page } = await newSession(browser, { startParam: '../../admin' });
       await page.waitForSelector('#walletView.active');

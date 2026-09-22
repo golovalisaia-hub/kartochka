@@ -19,7 +19,7 @@
   const SDK_URL = 'https://telegram.org/js/telegram-web-app.js?63';
   const SDK_TIMEOUT_MS = 6000;
   const SDK_POLL_MS = 50;
-  const KNOWN_MODES = new Set(['quick', 'normal']);
+  const KNOWN_MODES = new Set(['quick', 'add', 'normal']);
 
   let webApp = null;
   let initData = '';
@@ -171,6 +171,9 @@
 
   function mode() {
     if (startParam === 'quick') return 'quick';
+    // `add` opens the ordinary wallet and lands on the add-card sheet. It selects a screen
+    // and nothing else: it grants no access and skips no authentication.
+    if (startParam === 'add') return 'add';
     // Any unknown or missing launch parameter falls back to the ordinary wallet.
     return 'normal';
   }

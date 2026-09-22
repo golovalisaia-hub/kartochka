@@ -52,6 +52,7 @@
     cloudBusy: false,
     pendingEmail: '',
     mode: 'normal',
+    pendingAddScreen: false,
     gateReason: '',
     quickReturnView: null
   };
@@ -435,6 +436,15 @@
     }
     hidePrivacyGate();
     syncBackButton();
+    openPendingAddSheet();
+  }
+
+  /* A launch asking for the add-card screen opens it only after authentication has settled,
+     so the deep link can never be used to peek at a wallet before the account is known. */
+  function openPendingAddSheet() {
+    if (!state.pendingAddScreen) return;
+    state.pendingAddScreen = false;
+    openAdd();
   }
 
   async function submitEmail(event) {
@@ -1511,6 +1521,7 @@
       renderGrid();
       showPrivacyGate('Проверяем вход…');
       if (telegram.mode() === 'quick') enterQuickMode();
+      else if (telegram.mode() === 'add') state.pendingAddScreen = true;
       // Telegram may now paint: the first screen is the neutral gate, never someone's cards.
       telegram.signalReady();
       telegram.onViewportChange(() => renderQuick());
@@ -1527,6 +1538,7 @@
       // Outside Telegram ?startapp=quick still selects the compact screen, which makes the
       // layout testable in an ordinary browser.
       if (telegram?.startParam?.() === 'quick') enterQuickMode();
+      else if (telegram?.startParam?.() === 'add') state.pendingAddScreen = true;
     }
 
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
