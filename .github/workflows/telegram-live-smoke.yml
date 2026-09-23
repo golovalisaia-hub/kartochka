@@ -1,0 +1,37 @@
+name: Telegram deployed handler smoke (no secrets)
+on:
+  push:
+    branches: [fix/telegram-private-test]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  deployed-handler:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify deployed handler and safe access boundaries
+        env:
+          FUNCTION_URL: https://qtyqdlkmfojbebgxcqxl.supabase.co/functions/v1/telegram
+        run: |
+          node <<'JS'
+          const url = process.env.FUNCTION_URL;
+          const cases = [
+            ['diagnose', 401], // New handler exists; diagnostics are secret-protected.
+            ['brand', 401],    // Branding operations cannot run anonymously.
+            ['invoice', 403],  // Real payments must remain disabled.
+          ];
+          (async () => {
+            for (const [action, expected] of cases) {
+              const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action }),
+                signal: AbortSignal.timeout(15000)
+              });
+              console.log(`${action}: HTTP ${response.status}, expected ${expected}`);
+              if (response.status !== expected) throw new Error(`${action}: unexpected HTTP status`);
+            }
+            console.log('PASS: deployed Telegram handler responds; protected routes and payments are safe.');
+          })().catch(error => { console.error('LIVE SMOKE FAILED:', error.message); process.exitCode = 1; });
+          JS
