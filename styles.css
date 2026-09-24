@@ -177,3 +177,47 @@ body.quick-mode .topbar { display:none!important }
 .quick-guide[open] summary::after { content:'⌄' }
 .quick-guide ol { margin:14px 0 0;padding-left:20px;color:#b9b9c1;font-size:13.5px;line-height:1.6 }
 .quick-guide li { margin-bottom:7px }
+
+/* ---------------------------------------------------------------------------
+ * Карты сообщества и согласие владельца.
+ * Управление общим доступом живёт под кодом карты, отдельно от зоны сканирования:
+ * необратимые действия не должны соседствовать со штрихкодом на кассе.
+ * ------------------------------------------------------------------------- */
+.community-state { display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;padding:38px 22px;border:1px solid var(--line);border-radius:26px;background:#141416;margin-top:18px }
+.community-state[hidden]{display:none}
+.community-mark { width:62px;height:62px;border-radius:20px;display:grid;place-items:center;background:rgba(255,255,255,.07) }
+.community-mark svg { width:30px;height:30px;stroke:#c9c9d1 }
+.community-state h2 { margin:0;font-size:21px }
+.community-state p { margin:0;color:var(--muted);font-size:14px;line-height:1.5;max-width:320px }
+.community-badge { display:inline-flex;padding:7px 14px;border-radius:999px;background:rgba(246,197,101,.16);color:#f6c565;font-size:12px;font-weight:800;letter-spacing:.06em }
+.community-note { color:#77777e;font-size:12.5px }
+.community-lead { color:var(--muted);font-size:14px;line-height:1.5;margin:16px 0 14px }
+
+.store-list { display:grid;gap:10px }
+.store-row { width:100%;border:1px solid var(--line);background:#1b1b1e;border-radius:20px;padding:16px;display:flex;flex-direction:column;gap:5px;text-align:left;cursor:pointer;color:#fff }
+.store-row:active { transform:scale(.99) }
+.store-row:disabled { opacity:.5;cursor:default }
+.store-row strong { font-size:16px }
+.store-row small { color:var(--muted);font-size:12.5px }
+
+.share-offer, .share-status { margin-top:20px;padding:16px;border-radius:22px;background:#ececea;border:1px solid rgba(0,0,0,.08) }
+.share-offer[hidden], .share-status[hidden]{display:none}
+.share-offer-head { display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px }
+.share-offer-head strong { font-size:15px;color:#141414;line-height:1.35 }
+.share-help { flex:0 0 auto;width:26px;height:26px;border-radius:50%;border:1px solid rgba(0,0,0,.18);background:#fff;color:#4a4a4f;font-weight:800;font-size:13px;cursor:pointer }
+.share-offer-actions { display:flex;align-items:center;gap:12px }
+.share-offer-actions .secondary-button { flex:1;background:#fff;color:#141414;border-color:rgba(0,0,0,.12) }
+.share-offer-actions .text-button { color:#6b6b70 }
+
+.share-status-head { display:flex;align-items:center;gap:8px;color:#141414;font-size:15px;margin-bottom:12px }
+.share-dot { width:9px;height:9px;border-radius:50%;background:#2e9e4f;box-shadow:0 0 0 3px rgba(46,158,79,.18) }
+.share-stats { display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 10px }
+.share-stats div { background:#fff;border-radius:14px;padding:10px 8px;text-align:center }
+.share-stats dt { color:#6b6b70;font-size:11px;margin-bottom:3px }
+.share-stats dd { margin:0;color:#141414;font-size:19px;font-weight:750;font-variant-numeric:tabular-nums }
+.share-last { margin:0 0 10px;color:#6b6b70;font-size:12px;text-align:center }
+.share-off { display:block;width:100%;color:#c43d2b }
+
+.share-terms { margin:6px 0 20px;padding-left:20px;color:#b9b9c1;font-size:14px;line-height:1.6 }
+.share-terms li { margin-bottom:7px }
+.share-help-text { color:#b9b9c1;font-size:14px;line-height:1.6;margin:0 0 14px }

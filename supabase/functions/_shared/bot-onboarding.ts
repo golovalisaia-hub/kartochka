@@ -24,14 +24,15 @@ export const BOT_DESCRIPTION =
 export const BOT_COMMANDS = [
   { command: 'start', description: 'Знакомство с Карточкой' },
   { command: 'menu', description: 'Главное меню' },
-  { command: 'quick', description: 'Быстрый доступ' },
-  { command: 'plans', description: 'Тарифы и Premium' },
-  { command: 'support', description: 'Поддержка' }
+  { command: 'quick', description: 'Быстрый доступ' }
 ];
 
 // `plans` is kept as an alias of `premium`: messages already sitting in users' chats carry
 // the old callback_data, and those buttons must keep working rather than silently failing.
 const PAGES = ['home', 'features', 'quick', 'backtap', 'action', 'android', 'premium', 'plans', 'support'];
+// Страницы, которых больше нет в интерфейсе. Их callback_data приходит из сообщений,
+// отправленных до изменения: нажатие обязано открыть главный экран, а не повиснуть.
+const RETIRED_PAGES = new Set(['support', 'plans']);
 
 export function onboardingAction(data) {
   if (typeof data !== 'string' || !data.startsWith(prefix)) return null;
@@ -74,6 +75,8 @@ export function onboardingPage(page, {
   const hasSupport = SUPPORT_LINK.test(supportUrl);
   const unavailable = '\n\n⚠️ Тестовое приложение пока недоступно по публичному адресу — кнопка запуска появится после публикации.';
 
+  // Снятые разделы ведут на главный экран.
+  if (RETIRED_PAGES.has(page) && page === 'support') page = 'home';
   const toMenu = callback('⌂ Главное меню', 'home');
   const toQuick = callback('← Быстрый доступ', 'quick');
 
@@ -85,22 +88,24 @@ export function onboardingPage(page, {
     case 'features':
       return {
         text: 'КАРТОЧКА — все скидочные карты в одном месте.\n\n'
-          + 'Храни карты любимых магазинов, быстро находи нужную и открывай штрихкод прямо на кассе.\n\n'
-          + 'Что умеет Карточка:\n'
-          + '💳 Хранит скидочные карты.\n'
-          + '📷 Позволяет добавлять карты по фотографии или вручную.\n'
-          + '🔎 Помогает находить нужную карту.\n'
-          + '⚡ Показывает недавно открытые карты.\n'
-          + '📱 Поддерживает быстрый запуск через функции смартфона.\n\n'
-          + 'Добавь карту один раз — и она всегда под рукой.\n\n'
-          + 'Идёт закрытый тест: добавляй только вымышленные карты, оплата отключена.'
+          + 'Добавляй карты любимых магазинов и открывай нужную за секунды прямо в Telegram.\n\n'
+          + '💳 Карты\n'
+          + '📷 Добавление по фото\n'
+          + '🔎 Поиск\n'
+          + '⚡ Недавние\n'
+          + '📱 Быстрый запуск\n\n'
+          + 'Добавь карту один раз — и она всегда под рукой.'
           + (available ? '' : unavailable),
         reply_markup: {
           inline_keyboard: [
             ...(addButton.length ? [addButton] : []),
             ...(appButton.length ? [appButton] : []),
             [callback('⚡ Кнопка действия', 'action'), callback('👆 Двойной тап', 'backtap')],
-            [callback('⭐ Тарифы и Premium', 'premium'), callback('🛟 Поддержка', 'support')]
+            [
+              callback('⭐ Premium — скоро', 'premium'),
+              // Недавние карты открываются сразу, без промежуточного экрана.
+              ...(quickButton.length ? [{ text: '⚡ Недавние карты', url: quickUrl }] : [callback('⚡ Недавние карты', 'quick')])
+            ]
           ]
         }
       };
@@ -157,34 +162,16 @@ export function onboardingPage(page, {
     case 'premium':
     case 'plans':
       return {
-        text: '⭐ Premium и тарифы\n\n'
-          + 'Сейчас бесплатно и останется бесплатным: свой кошелёк, добавление карт, поиск, штрихкоды и недавние карты. '
-          + 'Ничего из этого не станет платным.\n\n'
-          + 'Premium пока в разработке. Планируется однократная покупка, а не ежемесячная подписка. '
-          + 'Стоимость уточняется, дата запуска не определена.\n\n'
-          + 'Обмен картами будет добровольным: карта публикуется только по вашему решению. '
-          + 'Начисляются ли бонусы за чужие покупки, зависит от правил конкретного магазина — обещать их нельзя.\n\n'
-          + '💳 Оплата отключена: закрытый тест не принимает реальные платежи. Не оплачивайте доступ по сторонним ссылкам.',
+        text: '⭐ Premium — скоро\n\n'
+          + 'Premium и доступ к картам сообщества готовятся. Основной кошелёк продолжает работать бесплатно: '
+          + 'свои карты, добавление, поиск, штрихкоды и недавние карты остаются без оплаты.\n\n'
+          + 'Карты сообщества — это карты, которыми участники поделились добровольно. '
+          + 'Владелец включает общий доступ сам и может отключить его в любой момент. '
+          + 'Начисления зависят от правил конкретного магазина, поэтому обещать их нельзя.\n\n'
+          + 'Оплата пока не подключена. Не оплачивайте доступ по сторонним ссылкам.',
         reply_markup: { inline_keyboard: [[toMenu]] }
       };
 
-    case 'support':
-      return {
-        text: hasSupport
-          ? '🛟 Поддержка «Карточки»\n\n'
-            + 'Нажмите кнопку ниже, чтобы написать в поддержку.\n\n'
-            + 'Не отправляйте пароли, коды из писем и полные номера карт — они не нужны для помощи.'
-          : '🛟 Поддержка «Карточки»\n\n'
-            + 'Контакт поддержки пока не подключён, поэтому бот не обещает ответ на сообщения, которые некуда доставить.\n\n'
-            + 'Чтобы включить раздел, задайте в секретах Edge Function переменную TELEGRAM_SUPPORT_URL со ссылкой вида https://t.me/<аккаунт>.\n\n'
-            + 'Не отправляйте пароли, коды из писем и полные номера карт.',
-        reply_markup: {
-          inline_keyboard: [
-            ...(hasSupport ? [[{ text: '✍️ Написать в поддержку', url: supportUrl }]] : []),
-            [toMenu]
-          ]
-        }
-      };
 
     default:
       return onboardingPage('home', { appUrl, quickUrl, supportUrl, available });

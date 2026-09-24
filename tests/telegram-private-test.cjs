@@ -87,10 +87,14 @@ function signedInitData(token, user, authDate) {
   assert.match(atomic, /apply_telegram_test_card_change/);
   assert.match(atomic, /Найдены локальные карты без владельца/);
   const html = read('index.html');
-  assert.match(html, /id="catalogView"/);
-  assert.match(html, /id="catalogPayment"[^>]+disabled/);
+  assert.match(html, /id="communityView"/);
+  // Экран без Premium и аварийное состояние присутствуют в разметке.
+  assert.match(html, /id="communityLocked"/);
+  assert.match(html, /id="communityOff"/);
+  // Кнопок оплаты нет нигде: платежи подключаются отдельным этапом.
+  assert.doesNotMatch(html, /Купить|Оплатить|Telegram Stars/i);
   assert.match(html, /telegram-mini-app\.js/);
-  console.log('PASS Telegram Mini App uses isolated storage and exposes a payment-disabled catalog');
+  console.log('PASS Telegram Mini App uses isolated storage and exposes a Premium-gated community tab');
 
   // ---- launch configuration -------------------------------------------------
   const miniApp = read('telegram-mini-app.js');

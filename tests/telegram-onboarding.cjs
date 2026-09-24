@@ -15,8 +15,9 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
     supportUrl: 'https://t.me/KartochkaSupport'
   };
   const home = onboardingPage('home', links);
-  assert.match(home.text, /Карточка/);
-  assert.match(home.text, /вымышленные карты/);
+  assert.match(home.text, /КАРТОЧКА/);
+  // Технические оговорки закрытого теста в обычном приветствии не место.
+  assert.doesNotMatch(home.text, /закрыт\w+ тест|оплата отключена/i);
   // The welcome screen leads straight into the app rather than into another menu step.
   assert.equal(home.reply_markup.inline_keyboard[0][0].web_app.url, `${links.appUrl}?startapp=add`);
   assert.equal(onboardingAction('kartochka:features'), 'features');
@@ -31,8 +32,22 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
   assert.match(rows[1][0].text, /Открыть приложение/);
   assert.match(rows[2][0].text, /Кнопка действия/);
   assert.match(rows[2][1].text, /Двойной тап/);
-  assert.match(rows[3][0].text, /Тарифы и Premium/);
-  assert.match(rows[3][1].text, /Поддержка/);
+  assert.match(rows[3][0].text, /Premium — скоро/);
+  // «Недавние карты» ведут прямо в компактный кошелёк, без промежуточного экрана.
+  assert.match(rows[3][1].text, /Недавние карты/);
+  assert.equal(rows[3][1].url, links.quickUrl);
+
+  // Поддержка снята из интерфейса полностью.
+  const everyScreen = ['home', 'features', 'quick', 'backtap', 'action', 'android', 'premium']
+    .flatMap(page => onboardingPage(page, links).reply_markup.inline_keyboard.flat());
+  assert.equal(everyScreen.some(button => /поддержк/i.test(button.text)), false,
+    'кнопка поддержки не должна остаться ни на одном экране');
+  assert.equal(everyScreen.some(button => button.callback_data === 'kartochka:support'), false);
+
+  // Но старые сообщения у пользователей продолжают работать.
+  assert.equal(onboardingAction('kartochka:support'), 'support', 'старый callback обязан распознаваться');
+  const legacy = onboardingPage('support', links);
+  assert.equal(legacy.text, home.text, 'старая кнопка поддержки ведёт на главный экран');
 
   // "Добавить карту" opens the same Mini App on its add-card route; "Открыть приложение"
   // opens the wallet itself. Both are Web App buttons, not plain links.
@@ -45,11 +60,11 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
   const features = onboardingPage('features', links);
   assert.equal(features.text, main.text);
   const buttons = rows.flat();
-  for (const section of ['action', 'backtap', 'premium', 'support']) {
+  for (const section of ['action', 'backtap', 'premium']) {
     assert(buttons.some(button => button.callback_data === `kartochka:${section}`), section);
   }
   // Every capability listed must exist in the app today.
-  for (const promise of [/скидочные карты/i, /фотографии/i, /находить нужную карту/i, /штрихкод/i, /недавно открытые/i, /функции смартфона/i]) {
+  for (const promise of [/скидочные карты/i, /Добавление по фото/i, /Поиск/i, /Недавние/i, /Быстрый запуск/i]) {
     assert.match(main.text, promise);
   }
   assert.doesNotMatch(main.text, /SGX|Planner/i, 'no reference material may leak into our copy');
@@ -66,7 +81,7 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
 
   // Every information screen offers a way back to the main screen, and the gesture guides
   // each carry a working link to the compact wallet.
-  for (const section of ['backtap', 'action', 'android', 'premium', 'plans', 'support', 'quick']) {
+  for (const section of ['backtap', 'action', 'android', 'premium', 'plans', 'quick']) {
     const leaf = onboardingPage(section, links).reply_markup.inline_keyboard.flat();
     assert(leaf.some(button => button.callback_data === 'kartochka:home'), `${section} must reach the main menu`);
   }
@@ -82,29 +97,21 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
 
   // Premium copy must stay truthful: no invented price, no monthly subscription, no payment.
   const premium = onboardingPage('premium', links);
-  assert.match(premium.text, /Стоимость уточняется|уточняется/);
-  assert.match(premium.text, /однократн|разов/);
+  assert.match(premium.text, /Premium — скоро/);
+  assert.match(premium.text, /бесплатно/);
+  // Форма покупки ещё не выбрана: ни «однократная», ни «подписка», ни цена, ни дата.
+  assert.doesNotMatch(premium.text, /однократн|разов(ая|ую)\s+покупк/i);
+  assert.doesNotMatch(premium.text, /\d+\s*(₽|руб|rub|\$)/i);
   // Premium may be contrasted with a monthly subscription, but never presented as one:
   // every mention of "ежемесячн…" must be negated.
-  for (const match of premium.text.matchAll(/(.{0,6})ежемесячн/gi)) {
-    assert.match(match[1], /(^|[\s,])не\s*$/i, `Premium must not be called a monthly subscription: "${match[0]}"`);
-  }
-  assert.match(premium.text, /Оплата отключена/);
-  assert.match(premium.text, /зависит от правил/, 'bonuses must not be promised');
-  assert.match(premium.text, /останется бесплатным/, 'free features must not become paid');
+  assert.doesNotMatch(premium.text, /ежемесячн/i, 'форма оплаты ещё не определена');
+  assert.match(premium.text, /Оплата пока не подключена/);
+  assert.match(premium.text, /от правил конкретного магазина/, 'bonuses must not be promised');
+  assert.match(premium.text, /Владелец включает общий доступ сам/, 'sharing must be described as opt-in');
   assert.equal(premium.reply_markup.inline_keyboard.flat().some(button => /оплатить|купить|stars/i.test(button.text)), false);
   // Buttons already sitting in users' chats keep working.
   assert.equal(onboardingAction('kartochka:plans'), 'plans');
   assert.equal(onboardingPage('plans', links).text, premium.text);
-
-  assert.equal(onboardingPage('support', links).reply_markup.inline_keyboard[0][0].url, links.supportUrl);
-  const noSupport = onboardingPage('support', { ...links, supportUrl: '' });
-  assert.match(noSupport.text, /пока не подключён/);
-  assert.match(noSupport.text, /TELEGRAM_SUPPORT_URL/, 'must name what has to be configured');
-  assert.equal(noSupport.reply_markup.inline_keyboard.flat().some(button => button.url), false);
-  // A support link must be a Telegram contact, never an arbitrary host.
-  assert.equal(onboardingPage('support', { ...links, supportUrl: 'https://evil.example/chat' })
-    .reply_markup.inline_keyboard.flat().some(button => button.url), false);
 
   // Nothing offers a launch button while the app URL is not serving the app.
   const unavailable = onboardingPage('home', { ...links, available: false });
@@ -115,7 +122,7 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
       .reply_markup.inline_keyboard.flat().some(button => button.url), false, section);
   }
 
-  for (const section of ['home', 'features', 'quick', 'premium', 'action', 'backtap', 'android', 'plans', 'support']) {
+  for (const section of ['home', 'features', 'quick', 'premium', 'action', 'backtap', 'android', 'plans']) {
     const built = onboardingPage(section, links);
     assert(built.text.length <= 1024, `${section} photo caption exceeds Telegram limit`);
     assert(built.reply_markup.inline_keyboard.every(row => row.length <= 2), `${section} crams a row with buttons`);
@@ -257,7 +264,7 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
       assert.equal((await dispatch(press('kartochka:premium'))).status, 200);
       assert.ok(calls.find(item => item.method === 'answerCallbackQuery'), 'the button must be acknowledged');
       const edited = calls.find(item => item.method === 'editMessageText');
-      assert.match(edited.payload.text, /Premium и тарифы/);
+      assert.match(edited.payload.text, /Premium — скоро/);
       assert.equal(calls.some(item => item.method === 'sendMessage'), false, 'no extra message per step');
       assert.ok(edited.payload.reply_markup.inline_keyboard.flat()
         .some(button => button.callback_data === 'kartochka:home'), 'every section returns home');
@@ -332,13 +339,25 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
       assert.equal(calls.some(item => item.method === 'sendPhoto'), false, 'quick launch must not send the welcome picture');
     });
 
-    await check('/support and /plans open their sections', async () => {
+    await check('снятая /support не зависает, а открывает главный экран', async () => {
       reset();
       assert.equal((await dispatch(message('/support'))).status, 200);
-      assert.ok(calls.find(item => item.method === 'sendMessage' && /Поддержка/.test(item.payload.text)));
+      const sent = calls.find(item => item.method === 'sendMessage');
+      assert.ok(sent, 'старая команда обязана получить ответ');
+      assert.match(sent.payload.text, /КАРТОЧКА/, 'ведёт на главный экран');
+      assert.equal(/поддержк/i.test(sent.payload.text), false, 'раздела поддержки больше нет');
       reset();
       assert.equal((await dispatch(message('/plans'))).status, 200);
-      assert.ok(calls.find(item => item.method === 'sendMessage' && /Premium и тарифы/.test(item.payload.text)));
+      assert.ok(calls.find(item => item.method === 'sendMessage' && /Premium — скоро/.test(item.payload.text)));
+    });
+
+    await check('старый callback поддержки подтверждается и ведёт в меню', async () => {
+      reset();
+      assert.equal((await dispatch(press('kartochka:support'))).status, 200);
+      assert.ok(calls.find(item => item.method === 'answerCallbackQuery'), 'индикатор обязан сняться');
+      const edited = calls.find(item => item.method === 'editMessageText');
+      assert.ok(edited, 'экран обязан смениться');
+      assert.match(edited.payload.text, /КАРТОЧКА/);
     });
 
     await check('ordinary chatter gets one helpful reply, not silence', async () => {
@@ -354,9 +373,11 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
       assert.equal((await dispatch({ action: 'setup' })).status, 200);
       assert.ok(calls.find(item => item.method === 'setWebhook').payload.allowed_updates.includes('callback_query'));
       const commands = calls.find(item => item.method === 'setMyCommands').payload.commands.map(item => item.command);
-      for (const command of ['start', 'menu', 'support', 'plans']) {
+      for (const command of ['start', 'menu', 'quick']) {
         assert.ok(commands.includes(command), `/${command} must be registered`);
       }
+      // Поддержка снята с публикации: в списке команд её быть не должно.
+      assert.equal(commands.includes('support'), false, '/support больше не публикуется');
       // The card Telegram shows before Start is published through the documented methods.
       assert.equal(calls.find(item => item.method === 'setMyName').payload.name, 'Карточка');
       const description = calls.find(item => item.method === 'setMyDescription').payload.description;

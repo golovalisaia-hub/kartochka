@@ -7,6 +7,21 @@
   const DEMO_CLEANUP_KEY = 'kartochka.demo-cleanup.v1';
   const CLOUD_USER_KEY = 'kartochka.cloud-user.v1';
   const OPEN_QUEUE_KEY = 'kartochka.card-opens.queue.v1';
+  const SHARE_DISMISS_KEY = 'kartochka.sharing-offer-dismissed.v1';
+
+  /*
+   * Соответствие магазина программе лояльности. Зеркалит brand_contexts на сервере и нужно
+   * только чтобы решить, показывать ли предложение поделиться. Источник истины — сервер:
+   * set_card_sharing отклонит незнакомую программу, что бы клиент ни прислал.
+   */
+  const LOYALTY_BRANDS = new Map([
+    ['пятёрочка', { program: 'x5_club', brand: 'pyaterochka' }],
+    ['пятерочка', { program: 'x5_club', brand: 'pyaterochka' }],
+    ['перекрёсток', { program: 'x5_club', brand: 'perekrestok' }],
+    ['перекресток', { program: 'x5_club', brand: 'perekrestok' }],
+    ['лента', { program: 'lenta', brand: 'lenta' }]
+  ]);
+  const loyaltyFor = store => LOYALTY_BRANDS.get(String(store || '').trim().toLowerCase()) || null;
   const CLOUD_IDS_PREFIX = 'kartochka.cloud-ids.v1.';
   const CLOUD_DELETIONS_PREFIX = 'kartochka.cloud-deletions.v1.';
   const LEGACY_DEMO_NUMBERS = new Set(['2200000715238','2900635618427','7800037421956','4600001853120']);
@@ -813,10 +828,143 @@
     if (gate) gate.hidden = true;
   }
 
+  /* ---------------------------------------------------------------------
+   * Карты сообщества. Всё состояние приходит с сервера: клиент не решает,
+   * есть ли Premium и какие магазины доступны.
+   * ------------------------------------------------------------------- */
+  async function renderCommunity() {
+    const locked = $('#communityLocked');
+    const off = $('#communityOff');
+    const stores = $('#communityStores');
+    if (!locked) return;
+    locked.hidden = true; off.hidden = true; stores.hidden = true;
+
+    if (!state.user || !window.KartochkaCommunity) { locked.hidden = false; return; }
+    let data;
+    try {
+      data = await window.KartochkaCommunity.programs();
+    } catch (_) {
+      locked.hidden = false;
+      return;
+    }
+    if (data?.reason === 'disabled') { off.hidden = false; return; }
+    if (!data?.available) { locked.hidden = false; return; }
+
+    const list = $('#communityStoreList');
+    list.replaceChildren();
+    const entries = Array.isArray(data.programs) ? data.programs : [];
+    $('#communityEmpty').hidden = entries.length > 0;
+    for (const entry of entries) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'store-row';
+      const name = document.createElement('strong');
+      name.textContent = entry.display_name;
+      const hint = document.createElement('small');
+      // Показываем только наличие карт, без владельцев и без их числа по людям.
+      hint.textContent = entry.cards_available > 0 ? 'Карты доступны' : 'Сейчас нет карт';
+      button.append(name, hint);
+      button.disabled = !entry.cards_available;
+      button.addEventListener('click', () => requestCommunityCard(entry));
+      list.append(button);
+    }
+    stores.hidden = false;
+  }
+
+  async function requestCommunityCard(entry) {
+    try {
+      const result = await window.KartochkaCommunity.requestCard(entry.program, entry.brand);
+      if (result?.status === 'served' && result.card) {
+        showCommunityCard(result.card, entry.display_name);
+        return;
+      }
+      // Внутренние причины наружу не выносим.
+      toast(result?.status === 'rate_limited'
+        ? 'Слишком много запросов. Подождите немного.'
+        : 'Сейчас нет доступных карт этого магазина. Попробуйте позже.');
+    } catch (_) {
+      toast('Не удалось получить карту. Попробуйте позже.');
+    }
+  }
+
+  /* Выданная карта показывается тем же экраном кассира, но не попадает в кошелёк
+     и не сохраняется на устройстве: она принадлежит другому человеку. */
+  function showCommunityCard(card, storeLabel) {
+    state.activeCardId = null;
+    $('#detailCard').style.setProperty('--card-a', card.color_a || '#333');
+    $('#detailCard').style.setProperty('--card-b', card.color_b || '#111');
+    $('#detailCard').style.setProperty('--card-text', card.text_color || '#fff');
+    $('#detailStore').textContent = card.store || storeLabel;
+    $('#detailDigits').textContent = lastDigits(card.number);
+    $('#detailLogo').textContent = initials(card.store || storeLabel);
+    mountCardCode({ number: card.number, format: card.format, codeImage: card.code_image, store: card.store || storeLabel });
+    $('#shareOffer').hidden = true;
+    $('#shareStatus').hidden = true;
+    // Чужую карту нельзя удалить из этого экрана.
+    $('#deleteCard').hidden = true;
+    showOverlay('#cardOverlay');
+    syncBackButton();
+  }
+
+  /* ------------------------------------------------ согласие владельца ----
+   * Общий доступ всегда выключен по умолчанию и включается только явным
+   * действием владельца с подтверждением. Никаких заранее отмеченных галочек.
+   * --------------------------------------------------------------------- */
+  function dismissedOffers() {
+    try {
+      const data = JSON.parse(localStorage.getItem(SHARE_DISMISS_KEY) || '{}');
+      return data && typeof data === 'object' ? data : {};
+    } catch (_) { return {}; }
+  }
+
+  async function renderSharing(card) {
+    const offer = $('#shareOffer');
+    const status = $('#shareStatus');
+    if (!offer || !status) return;
+    offer.hidden = true;
+    status.hidden = true;
+    const loyalty = loyaltyFor(card?.store);
+    if (!loyalty || !state.user || !window.KartochkaCommunity) return;
+
+    let info = null;
+    try { info = await window.KartochkaCommunity.stats(card.id); } catch (_) { return; }
+    if (state.activeCardId !== card.id) return; // экран уже сменился
+
+    if (info?.sharing_enabled) {
+      $('#shareToday').textContent = String(info.today ?? 0);
+      $('#shareWeek').textContent = String(info.week ?? 0);
+      $('#shareTotal').textContent = String(info.total ?? 0);
+      const last = $('#shareLast');
+      if (info.last_served_at) {
+        last.textContent = `Последний показ: ${new Date(info.last_served_at).toLocaleString('ru')}`;
+        last.hidden = false;
+      } else { last.hidden = true; }
+      status.hidden = false;
+      return;
+    }
+    // Отказ запоминается, чтобы предложение не повторялось при каждом открытии.
+    if (dismissedOffers()[card.id]) return;
+    offer.hidden = false;
+  }
+
+  async function applySharing(enabled) {
+    const card = state.cards.find(item => item.id === state.activeCardId);
+    const loyalty = loyaltyFor(card?.store);
+    if (!card || !loyalty) return;
+    try {
+      await window.KartochkaCommunity.setSharing(card.id, loyalty.program, loyalty.brand, enabled);
+      toast(enabled ? 'Общий доступ включён' : 'Общий доступ отключён');
+      await renderSharing(card);
+    } catch (_) {
+      toast('Не удалось изменить общий доступ. Попробуйте позже.');
+    }
+  }
+
   function showView(name) {
     $$('.view').forEach(view => view.classList.toggle('active', view.id === `${name}View`));
     $$('.nav-item').forEach(item => item.classList.toggle('active', item.dataset.view === name));
     if (name === 'all') renderGrid($('#cardSearch').value);
+    if (name === 'community') renderCommunity();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -1123,27 +1271,8 @@
     toast('Карта добавлена');
   }
 
-  function openCard(id) {
-    const card = state.cards.find(item => item.id === id);
-    if (!card) return;
-    // A real open, recorded separately from creation and editing.
-    markOpened(card);
-    state.activeCardId = id;
-    renderStack();
-    renderQuick();
-    renderGrid($('#cardSearch').value);
-    // Still inside the user's tap: if the compact sheet is too short for a readable code,
-    // ask Telegram for more room now rather than making the user press a second button.
-    if (state.mode === 'quick') requestRoomForCode();
-    $('#detailCard').style.setProperty('--card-a', card.a);
-    $('#detailCard').style.setProperty('--card-b', card.b);
-    $('#detailCard').style.setProperty('--card-text', card.text || '#fff');
-    const storeBrand = brandForStore(card.store);
-    $('#detailCard').dataset.brand = storeBrand?.id || 'custom';
-    $('#detailCard').dataset.brandMark = storeBrand?.mark || initials(card.store);
-    $('#detailLogo').textContent = storeBrand?.mark || initials(card.store);
-    $('#detailStore').textContent = card.store;
-    $('#detailDigits').textContent = lastDigits(card.number);
+  /* Одна отрисовка кода на свою карту и на карту сообщества — без дублирования. */
+  function mountCardCode(card) {
     $('#barcodeNumber').textContent = card.format === 'qr_code' ? 'QR-код' : card.number;
     const mount = $('#barcodeMount');
     mount.replaceChildren();
@@ -1166,6 +1295,32 @@
       error.textContent = 'Не удалось построить код. Проверьте данные карты.';
       mount.append(error);
     }
+  }
+
+  function openCard(id) {
+    const card = state.cards.find(item => item.id === id);
+    if (!card) return;
+    // A real open, recorded separately from creation and editing.
+    markOpened(card);
+    state.activeCardId = id;
+    renderStack();
+    renderQuick();
+    renderGrid($('#cardSearch').value);
+    // Still inside the user's tap: if the compact sheet is too short for a readable code,
+    // ask Telegram for more room now rather than making the user press a second button.
+    if (state.mode === 'quick') requestRoomForCode();
+    $('#detailCard').style.setProperty('--card-a', card.a);
+    $('#detailCard').style.setProperty('--card-b', card.b);
+    $('#detailCard').style.setProperty('--card-text', card.text || '#fff');
+    const storeBrand = brandForStore(card.store);
+    $('#detailCard').dataset.brand = storeBrand?.id || 'custom';
+    $('#detailCard').dataset.brandMark = storeBrand?.mark || initials(card.store);
+    $('#detailLogo').textContent = storeBrand?.mark || initials(card.store);
+    $('#detailStore').textContent = card.store;
+    $('#detailDigits').textContent = lastDigits(card.number);
+    mountCardCode(card);
+    $('#deleteCard').hidden = false;
+    renderSharing(card);
     showOverlay('#cardOverlay');
     syncBackButton();
     requestScreenWakeLock();
@@ -1361,8 +1516,30 @@
     });
   }
 
+  function bindShareEvents() {
+    $('#shareHelp').addEventListener('click', () => showOverlay('#shareHelpOverlay'));
+    $$('[data-close="shareHelp"]').forEach(item =>
+      item.addEventListener('click', () => hideOverlay('#shareHelpOverlay')));
+    // Включение всегда проходит через подтверждение: одно нажатие ничего не включает.
+    $('#shareEnable').addEventListener('click', () => showOverlay('#shareConfirmOverlay'));
+    $('#shareCancel').addEventListener('click', () => hideOverlay('#shareConfirmOverlay'));
+    $('#shareConfirm').addEventListener('click', async () => {
+      hideOverlay('#shareConfirmOverlay');
+      await applySharing(true);
+    });
+    $('#shareDisable').addEventListener('click', () => applySharing(false));
+    $('#shareDismiss').addEventListener('click', () => {
+      // Отказ запоминается, чтобы предложение не всплывало при каждом открытии карты.
+      const dismissed = dismissedOffers();
+      if (state.activeCardId) dismissed[state.activeCardId] = Date.now();
+      try { localStorage.setItem(SHARE_DISMISS_KEY, JSON.stringify(dismissed)); } catch (_) {}
+      $('#shareOffer').hidden = true;
+    });
+  }
+
   function bindEvents() {
     bindQuickEvents();
+    bindShareEvents();
     $('#walletBody').addEventListener('click', toggleWallet);
     ['#quickAdd','#addCardHome','#addCardAll'].forEach(id => $(id).addEventListener('click', openAdd));
     ['#openAllTop','#showAllHome'].forEach(id => $(id).addEventListener('click', () => showView('all')));

@@ -1,4 +1,4 @@
-const CACHE = 'kartochka-v14-telegram-quick';
+const CACHE = 'kartochka-v15-community';
 const APP_SHELL = [
   './',
   './index.html',
@@ -11,6 +11,7 @@ const APP_SHELL = [
   './auth-delivery.js',
   './cloud.js',
   './cloud-atomic.js',
+  './cloud-community.js',
   './telegram-mini-app.js',
   './config.js',
   './scanner-enhance.js',

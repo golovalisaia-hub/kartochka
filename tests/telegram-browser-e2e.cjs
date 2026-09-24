@@ -164,11 +164,15 @@ const server = http.createServer((request, response) => {
 
     await page.reload({ waitUntil: 'load' });
     assert.equal(await page.locator('#walletEmpty').isVisible(), true);
-    await page.locator('.nav-item[data-view=catalog]').click();
-    assert.equal(await page.locator('#catalogTitle').innerText(), 'Каталог карт');
-    assert.equal(await page.locator('#catalogPayment').isDisabled(), true);
+    // Раздел каталога заменён разделом сообщества: без Premium он заблокирован.
+    await page.locator('.nav-item[data-view=community]').click();
+    assert.equal(await page.locator('#communityTitle').innerText(), 'Карты сообщества');
+    await page.waitForSelector('#communityLocked:not([hidden])');
+    assert.match(await page.locator('#communityLocked').innerText(), /Premium — скоро/);
+    assert.equal(await page.locator('#communityStores').isVisible(), false,
+      'без Premium список магазинов не показывается');
     assert.equal(requests.some(item => item.path.includes('/rest/v1/cards')), false);
-    console.log('PASS Telegram Mini App auth, isolated add/edit/delete/reload, barcode, catalog and payment-disabled flow');
+    console.log('PASS Telegram Mini App auth, isolated add/edit/delete/reload, barcode, community locked without Premium');
   } finally {
     await browser.close();
     await new Promise(resolve => server.close(resolve));

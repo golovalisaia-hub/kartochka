@@ -256,7 +256,7 @@ Deno.serve(async r=>{
         else if(/^\/help(?:@\w+)?\s*$/i.test(text))await showIntro(chatId,'features');
         else if(/^\/quick(?:@\w+)?\s*$/i.test(text))await showIntro(chatId,'quick');
         else if(/^\/plans(?:@\w+)?\s*$/i.test(text))await showIntro(chatId,'premium');
-        else if(/^\/support(?:@\w+)?\s*$/i.test(text))await showIntro(chatId,'support');
+        else if(/^\/support(?:@\w+)?\s*$/i.test(text))await showIntro(chatId,'home');
         else if(/^\//.test(text))await showIntro(chatId,'features');
         else if(text)await bot('sendMessage',{chat_id:chatId,text:'Не понял команду. Откройте главное меню кнопкой ниже или отправьте /menu.',reply_markup:{inline_keyboard:[[{text:'⌂ Главное меню',callback_data:'kartochka:features'}]]}});
       }
