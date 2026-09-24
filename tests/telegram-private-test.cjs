@@ -105,13 +105,20 @@ function signedInitData(token, user, authDate) {
   // initData, not initDataUnsafe, is what authentication sends to the server.
   assert.match(miniApp, /loginWithTelegram\(initData\)/);
   assert.doesNotMatch(miniApp, /loginWithTelegram\([^)]*initDataUnsafe/);
+  const cloud = read('cloud.js');
+  assert.match(cloud, /result\?\.access_token\s*\?\s*result/);
+  assert.match(cloud, /result\?\.token_hash/);
+  const telegramFunction = read('supabase/functions/telegram/index.ts');
+  assert.match(telegramFunction, /\/auth\/v1\/token\?grant_type=password/);
+  assert.doesNotMatch(telegramFunction, /\/auth\/v1\/admin\/generate_link/);
+  assert.match(telegramFunction, /JSON\.stringify\(\{password,user_metadata:/);
   // Viewport plumbing must use the documented fields rather than assuming a full screen.
   for (const field of ['viewportHeight', 'viewportStableHeight', 'safeAreaInset', 'contentSafeAreaInset', 'viewportChanged']) {
     assert.match(miniApp, new RegExp(field), `telegram-mini-app.js must handle ${field}`);
   }
   const appSource = read('app.js');
   assert.doesNotMatch(appSource, /expand\(\s*'startup'\s*\)/);
-  console.log('PASS Telegram SDK version, single load, no startup expand and signed-init-data login');
+  console.log('PASS Telegram SDK version, single load, no startup expand and direct server session login');
 
   // ---- the Mini App URL health check ----------------------------------------
   const { inspectWebAppUrl } = await import(pathToFileURL(path.join(root, 'supabase/functions/_shared/telegram.ts')).href);

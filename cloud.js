@@ -163,11 +163,18 @@
       method: 'POST',
       body: JSON.stringify({ action: 'login', initData })
     });
-    if (!result?.token_hash) throw new Error('Telegram-вход не подтверждён сервером.');
-    const session = await request('/auth/v1/verify', {
-      method: 'POST',
-      body: JSON.stringify({ token_hash: result.token_hash, type: result.type || 'magiclink' })
-    });
+    // The Edge Function normally returns a complete server-created session. Keep the
+    // token-hash branch for a rolling deploy where an older function may answer briefly.
+    let session = result?.access_token ? result : null;
+    if (!session && result?.token_hash) {
+      session = await request('/auth/v1/verify', {
+        method: 'POST',
+        body: JSON.stringify({ token_hash: result.token_hash, type: result.type || 'magiclink' })
+      });
+    }
+    if (!session?.access_token || !session?.user?.id) {
+      throw new Error('Telegram-вход не подтверждён сервером.');
+    }
     storeSession(session);
     lastObserved = null;
     return session.user;
