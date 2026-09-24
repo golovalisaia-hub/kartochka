@@ -109,16 +109,17 @@ function signedInitData(token, user, authDate) {
   assert.match(cloud, /result\?\.access_token\s*\?\s*result/);
   assert.match(cloud, /result\?\.token_hash/);
   const telegramFunction = read('supabase/functions/telegram/index.ts');
-  assert.match(telegramFunction, /\/auth\/v1\/token\?grant_type=password/);
-  assert.doesNotMatch(telegramFunction, /\/auth\/v1\/admin\/generate_link/);
-  assert.match(telegramFunction, /JSON\.stringify\(\{password,user_metadata:/);
+  assert.match(telegramFunction, /\/auth\/v1\/admin\/generate_link/);
+  // Raw GoTrue REST returns hashed_token at the top level; supabase-js wraps it in properties.
+  assert.match(telegramFunction, /l\.hashed_token\|\|l\.properties\?\.hashed_token/);
+  assert.doesNotMatch(telegramFunction, /\/auth\/v1\/token\?grant_type=password/);
   // Viewport plumbing must use the documented fields rather than assuming a full screen.
   for (const field of ['viewportHeight', 'viewportStableHeight', 'safeAreaInset', 'contentSafeAreaInset', 'viewportChanged']) {
     assert.match(miniApp, new RegExp(field), `telegram-mini-app.js must handle ${field}`);
   }
   const appSource = read('app.js');
   assert.doesNotMatch(appSource, /expand\(\s*'startup'\s*\)/);
-  console.log('PASS Telegram SDK version, single load, no startup expand and direct server session login');
+  console.log('PASS Telegram SDK version, single load, no startup expand and compatible server session login');
 
   // ---- the Mini App URL health check ----------------------------------------
   const { inspectWebAppUrl } = await import(pathToFileURL(path.join(root, 'supabase/functions/_shared/telegram.ts')).href);

@@ -163,8 +163,7 @@
       method: 'POST',
       body: JSON.stringify({ action: 'login', initData })
     });
-    // The Edge Function normally returns a complete server-created session. Keep the
-    // token-hash branch for a rolling deploy where an older function may answer briefly.
+    // Accept both response shapes so frontend and Edge Function can be rolled out safely.
     let session = result?.access_token ? result : null;
     if (!session && result?.token_hash) {
       session = await request('/auth/v1/verify', {
