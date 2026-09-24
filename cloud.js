@@ -163,11 +163,17 @@
       method: 'POST',
       body: JSON.stringify({ action: 'login', initData })
     });
-    if (!result?.token_hash) throw new Error('Telegram-вход не подтверждён сервером.');
-    const session = await request('/auth/v1/verify', {
-      method: 'POST',
-      body: JSON.stringify({ token_hash: result.token_hash, type: result.type || 'magiclink' })
-    });
+    // Accept both response shapes so frontend and Edge Function can be rolled out safely.
+    let session = result?.access_token ? result : null;
+    if (!session && result?.token_hash) {
+      session = await request('/auth/v1/verify', {
+        method: 'POST',
+        body: JSON.stringify({ token_hash: result.token_hash, type: result.type || 'magiclink' })
+      });
+    }
+    if (!session?.access_token || !session?.user?.id) {
+      throw new Error('Telegram-вход не подтверждён сервером.');
+    }
     storeSession(session);
     lastObserved = null;
     return session.user;

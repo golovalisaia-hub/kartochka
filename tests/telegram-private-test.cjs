@@ -109,13 +109,25 @@ function signedInitData(token, user, authDate) {
   // initData, not initDataUnsafe, is what authentication sends to the server.
   assert.match(miniApp, /loginWithTelegram\(initData\)/);
   assert.doesNotMatch(miniApp, /loginWithTelegram\([^)]*initDataUnsafe/);
+  const cloud = read('cloud.js');
+  assert.match(cloud, /result\?\.access_token\s*\?\s*result/);
+  assert.match(cloud, /result\?\.token_hash/);
+  const telegramFunction = read('supabase/functions/telegram/index.ts');
+  // Let GoTrue's magic-link endpoint create new users and recover an existing orphaned Auth user.
+  assert.doesNotMatch(telegramFunction, /\/auth\/v1\/admin\/users'\s*,\s*\{method:'POST'/);
+  assert.match(telegramFunction, /\/auth\/v1\/admin\/generate_link/);
+  assert.match(telegramFunction, /id=l\.id\|\|l\.user\?\.id/);
+  assert.match(telegramFunction, /if\(known&&known!==id\)throw Error\('Telegram account mismatch'\)/);
+  // Raw GoTrue REST returns hashed_token at the top level; supabase-js wraps it in properties.
+  assert.match(telegramFunction, /l\.hashed_token\|\|l\.properties\?\.hashed_token/);
+  assert.doesNotMatch(telegramFunction, /\/auth\/v1\/token\?grant_type=password/);
   // Viewport plumbing must use the documented fields rather than assuming a full screen.
   for (const field of ['viewportHeight', 'viewportStableHeight', 'safeAreaInset', 'contentSafeAreaInset', 'viewportChanged']) {
     assert.match(miniApp, new RegExp(field), `telegram-mini-app.js must handle ${field}`);
   }
   const appSource = read('app.js');
   assert.doesNotMatch(appSource, /expand\(\s*'startup'\s*\)/);
-  console.log('PASS Telegram SDK version, single load, no startup expand and signed-init-data login');
+  console.log('PASS Telegram SDK version, single load, no startup expand and compatible server session login');
 
   // ---- the Mini App URL health check ----------------------------------------
   const { inspectWebAppUrl } = await import(pathToFileURL(path.join(root, 'supabase/functions/_shared/telegram.ts')).href);
