@@ -56,6 +56,8 @@ jobs:
         run: node tests/telegram-onboarding.cjs
       - name: Community tab, Premium gate and owner consent
         run: node tests/community-ui.cjs
+      - name: Legal pages, pricing source and review code
+        run: node tests/legal-pages.cjs
 
   community-sql:
     # Честность ротации, атомарность и RLS проверяются на настоящем PostgreSQL:

@@ -25,7 +25,10 @@ async function appLaunchOptions(){
   let username='';
   if(health.ok){try{username=String((await bot('getMe',{}))?.username||'')}catch(_){}}
   const quickUrl=/^[a-zA-Z0-9_]{5,32}$/.test(username)?`https://t.me/${username}?startapp=quick&mode=compact`:'';
-  const value={appUrl,quickUrl,available:health.ok,supportUrl:Deno.env.get('TELEGRAM_SUPPORT_URL')||''};
+  // Режим проверки Platega включён по умолчанию: слово-код должно быть видно проверяющему
+  // даже если переменная окружения не задана. Выключается явным PLATEGA_REVIEW_MODE=false.
+  const reviewMode=(Deno.env.get('PLATEGA_REVIEW_MODE')||'true').toLowerCase()!=='false';
+  const value={appUrl,quickUrl,available:health.ok,reviewMode,supportUrl:Deno.env.get('TELEGRAM_SUPPORT_URL')||''};
   launchCache={at:Date.now(),value};
   return value;
 }
@@ -173,6 +176,47 @@ async function sendQuickLaunch(chatId){
   });
 }
 
+/*
+ * Приём обращений. Режим ожидания живёт в таблице, а не в памяти функции: экземпляры
+ * Edge Function короткоживущие, и состояние в памяти терялось бы между сообщениями.
+ * У режима есть срок: иначе случайное сообщение через час стало бы обращением.
+ */
+const TICKET_WINDOW_MINUTES=15;
+async function startTicket(telegramUserId,chatId){
+  await admin('/rest/v1/support_ticket_state',{
+    method:'POST',
+    headers:{Prefer:'resolution=merge-duplicates,return=minimal'},
+    body:JSON.stringify({
+      telegram_user_id:telegramUserId,chat_id:chatId,awaiting_since:new Date().toISOString(),
+      expires_at:new Date(Date.now()+TICKET_WINDOW_MINUTES*60000).toISOString()
+    })
+  });
+}
+async function cancelTicket(telegramUserId){
+  await admin('/rest/v1/support_ticket_state?telegram_user_id=eq.'+telegramUserId,{method:'DELETE'}).catch(()=>{});
+}
+async function awaitingTicket(telegramUserId){
+  const rows=await admin('/rest/v1/support_ticket_state?select=expires_at&telegram_user_id=eq.'+telegramUserId).catch(()=>[]);
+  const until=rows?.[0]?.expires_at;
+  if(!until)return false;
+  if(new Date(until).getTime()<=Date.now()){await cancelTicket(telegramUserId);return false}
+  return true;
+}
+async function createTicket(telegramUserId,chatId,text){
+  // Номер обращения строится из времени и не раскрывает внутренние идентификаторы.
+  const ticketNo='K-'+Date.now().toString(36).toUpperCase().slice(-6);
+  const link=await admin('/rest/v1/telegram_accounts?select=user_id&telegram_user_id=eq.'+telegramUserId).catch(()=>[]);
+  await admin('/rest/v1/support_tickets',{
+    method:'POST',headers:{Prefer:'return=minimal'},
+    body:JSON.stringify({
+      ticket_no:ticketNo,user_id:link?.[0]?.user_id||null,telegram_user_id:telegramUserId,
+      chat_id:chatId,message:String(text).slice(0,4000),status:'open'
+    })
+  });
+  await cancelTicket(telegramUserId);
+  return ticketNo;
+}
+
 const CAPTION_LIMIT=1024;
 async function showIntro(chatId,page,{messageId=null,hasPhoto=false,initial=false}={}){
   const launch=await appLaunchOptions();
@@ -238,6 +282,11 @@ Deno.serve(async r=>{
         }else{
           // Acknowledge first: Telegram shows a spinner on the button until this arrives.
           await tryBot('answerCallbackQuery',{callback_query_id:query.id});
+          const tgUser=Number(query.from?.id);
+          if(page==='ticket')await startTicket(tgUser,query.message.chat.id).catch(()=>{});
+          // Возврат на экран поддержки означает выход из режима: следующее обычное
+          // сообщение обращением уже не станет.
+          else if(page==='help'||page==='info'||page==='home')await cancelTicket(tgUser).catch(()=>{});
           await showIntro(query.message.chat.id,page,{
             messageId:query.message.message_id,
             hasPhoto:Boolean(query.message.photo?.length||query.message.animation||query.message.video)
@@ -246,6 +295,7 @@ Deno.serve(async r=>{
       }else if(u.message?.chat?.id&&u.message.chat.type==='private'){
         const chatId=u.message.chat.id;
         const text=String(u.message.text||'');
+        if(/^\//.test(text))await cancelTicket(Number(u.message.from?.id)).catch(()=>{});
         const start=text.match(/^\/start(?:@\w+)?(?:\s+(\S+))?\s*$/i);
         if(start){
           // A deep link that means "just open the wallet" must not start the presentation.
@@ -253,12 +303,25 @@ Deno.serve(async r=>{
           else await showIntro(chatId,'home',{initial:true});
         }
         else if(/^\/menu(?:@\w+)?\s*$/i.test(text))await showIntro(chatId,'features');
+        else if(/^\/info(?:@\w+)?\s*$/i.test(text))await showIntro(chatId,'info');
         else if(/^\/help(?:@\w+)?\s*$/i.test(text))await showIntro(chatId,'features');
         else if(/^\/quick(?:@\w+)?\s*$/i.test(text))await showIntro(chatId,'quick');
         else if(/^\/plans(?:@\w+)?\s*$/i.test(text))await showIntro(chatId,'premium');
         else if(/^\/support(?:@\w+)?\s*$/i.test(text))await showIntro(chatId,'home');
         else if(/^\//.test(text))await showIntro(chatId,'features');
-        else if(text)await bot('sendMessage',{chat_id:chatId,text:'Не понял команду. Откройте главное меню кнопкой ниже или отправьте /menu.',reply_markup:{inline_keyboard:[[{text:'⌂ Главное меню',callback_data:'kartochka:features'}]]}});
+        else if(text){
+          const tgUser=Number(u.message.from?.id);
+          if(await awaitingTicket(tgUser).catch(()=>false)){
+            const ticketNo=await createTicket(tgUser,chatId,text);
+            await bot('sendMessage',{
+              chat_id:chatId,
+              text:`Обращение №${ticketNo} принято.\n\nМы ответим в этом чате. Номер обращения пригодится, если понадобится уточнение.`,
+              reply_markup:{inline_keyboard:[[{text:'⬅️ Назад',callback_data:'kartochka:info'}]]}
+            });
+          } else {
+            await bot('sendMessage',{chat_id:chatId,text:'Не понял команду. Откройте главное меню кнопкой ниже или отправьте /menu.',reply_markup:{inline_keyboard:[[{text:'⌂ Главное меню',callback_data:'kartochka:features'}]]}});
+          }
+        }
       }
       return J({ok:true},200,h);
     }

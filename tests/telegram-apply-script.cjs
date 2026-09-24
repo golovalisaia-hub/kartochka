@@ -93,8 +93,9 @@ function startSite(html) {
       assert.ok(byMethod.setMyDescription.description.length <= 512);
       assert.ok(byMethod.setMyShortDescription.short_description.length <= 120);
       // Поддержка и тарифы сняты с публикации: в меню команд остаются только рабочие.
+      // /info публикуется отдельно: документы и поддержка обязаны находиться с первой попытки.
       assert.deepEqual(byMethod.setMyCommands.commands.map(item => item.command),
-        ['start', 'menu', 'quick']);
+        ['start', 'menu', 'quick', 'info']);
       assert.equal(byMethod.setChatMenuButton.menu_button.web_app.url, realUrl);
       assert.match(output, /Edit Botpic/, 'скрипт обязан сказать, что аватар ставится вручную');
       assert.doesNotMatch(output, /test-token/, 'токен не должен попадать в вывод');

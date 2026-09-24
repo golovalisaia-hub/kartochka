@@ -27,7 +27,7 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
   // The welcome screen carries the action grid: one column, one column, then two pairs.
   const main = onboardingPage('home', links);
   const rows = main.reply_markup.inline_keyboard;
-  assert.deepEqual(rows.map(row => row.length), [1, 1, 2, 2], 'button grid layout');
+  assert.deepEqual(rows.map(row => row.length), [1, 1, 2, 2, 1], 'button grid layout');
   assert.match(rows[0][0].text, /Добавить карту/);
   assert.match(rows[1][0].text, /Открыть приложение/);
   assert.match(rows[2][0].text, /Кнопка действия/);
@@ -122,7 +122,60 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
       .reply_markup.inline_keyboard.flat().some(button => button.url), false, section);
   }
 
-  for (const section of ['home', 'features', 'quick', 'premium', 'action', 'backtap', 'android', 'plans']) {
+  // ---- требования платёжного провайдера ------------------------------------
+  const info = onboardingPage('info', { ...links, reviewMode: true });
+  const infoButtons = info.reply_markup.inline_keyboard.flat();
+  // Четыре пункта обязаны быть ОТДЕЛЬНЫМИ кнопками: объединять документы нельзя.
+  assert.match(infoButtons[0].text, /Тариф и оплата/);
+  assert.match(infoButtons[1].text, /Пользовательское соглашение/);
+  assert.match(infoButtons[2].text, /Политика конфиденциальности/);
+  assert.match(infoButtons[3].text, /Поддержка/);
+  assert.match(infoButtons[4].text, /Назад/);
+  assert.equal(infoButtons.length, 5, 'ровно четыре пункта и возврат');
+  assert.equal(infoButtons.filter(b => /документ/i.test(b.text)).length, 0,
+    'документы не должны быть объединены в одну кнопку «Документы»');
+  // Документы открываются отдельными постоянными страницами.
+  assert.match(infoButtons[1].url, /terms\.html$/);
+  assert.match(infoButtons[2].url, /privacy\.html$/);
+
+  // Кодовое слово видно в режиме проверки и полностью исчезает вне его.
+  assert.match(info.text, /Код проверки: pay/);
+  assert.doesNotMatch(onboardingPage('info', { ...links, reviewMode: false }).text, /pay/i);
+  // По умолчанию слово не появляется там, где его не просили.
+  assert.doesNotMatch(onboardingPage('home', links).text, /Код проверки/);
+
+  // Раздел доступен с главного экрана и не закрыт оплатой.
+  assert.ok(main.reply_markup.inline_keyboard.flat().some(b => b.callback_data === 'kartochka:info'),
+    'кнопка «Информация» обязана быть на главном экране');
+
+  // Тариф: модель оплаты названа точно и не выдумана.
+  const tariff = onboardingPage('tariff', links);
+  assert.match(tariff.text, /Тариф и оплата/);
+  assert.match(tariff.text, /без автоматического продления/);
+  assert.doesNotMatch(tariff.text, /подписк/i, 'без автопродления это не подписка');
+  // Цена не определена владельцем — выдумывать сумму нельзя.
+  assert.match(tariff.text, /Стоимость уточняется/);
+  assert.doesNotMatch(tariff.text, /\d+\s*₽/, 'выдуманная сумма недопустима');
+  // Комиссии платёжного провайдера пользователю не показываются.
+  assert.doesNotMatch(tariff.text, /9\s*%|8\s*%|5\s*%|эквайринг|СБП|крипт/i);
+  // Платный доступ описан точно, без запрещённых формулировок.
+  assert.match(tariff.text, /добровольно разрешили/);
+  assert.match(tariff.text, /не становитесь владельцем/);
+  assert.match(tariff.text, /не гарантируется/);
+  assert.doesNotMatch(tariff.text, /прода(жа|ём)|аренд|обход/i);
+
+  // Поддержка ведёт к созданию обращения, а не в группу.
+  const help = onboardingPage('help', links);
+  assert.match(help.text, /одним сообщением/);
+  assert.ok(help.reply_markup.inline_keyboard.flat().some(b => b.callback_data === 'kartochka:ticket'));
+  assert.equal(help.reply_markup.inline_keyboard.flat().some(b => /t\.me\/.*chat|group|группа/i.test(b.url || '')), false,
+    'группа не считается выполнением требования');
+  // Из режима обращения должен быть явный выход.
+  assert.match(onboardingPage('ticket', links).text, /Отменить|выйти/i);
+  assert.ok(onboardingPage('ticket', links).reply_markup.inline_keyboard.flat()
+    .some(b => /Отменить/.test(b.text)));
+
+  for (const section of ['home', 'features', 'quick', 'premium', 'action', 'backtap', 'android', 'plans', 'info', 'tariff', 'help', 'ticket']) {
     const built = onboardingPage(section, links);
     assert(built.text.length <= 1024, `${section} photo caption exceeds Telegram limit`);
     assert(built.reply_markup.inline_keyboard.every(row => row.length <= 2), `${section} crams a row with buttons`);
@@ -150,6 +203,8 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
     TELEGRAM_SUPPORT_URL: 'https://t.me/KartochkaSupport'
   };
   let knownAccounts = [];
+  let ticketState = [];        // support_ticket_state
+  const tickets = [];          // support_tickets
   const oldDeno = globalThis.Deno;
   const oldFetch = globalThis.fetch;
   globalThis.Deno = { env: { get: key => env[key] }, serve: fn => { server = fn; } };
@@ -160,6 +215,16 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
     }
     if (target.startsWith(`${env.SUPABASE_URL}/rest/v1/telegram_accounts`)) {
       return Response.json(knownAccounts);
+    }
+    if (target.startsWith(`${env.SUPABASE_URL}/rest/v1/support_ticket_state`)) {
+      const method = (options.method || 'GET').toUpperCase();
+      if (method === 'POST') { ticketState = [JSON.parse(options.body)]; return Response.json({}); }
+      if (method === 'DELETE') { ticketState = []; return Response.json({}); }
+      return Response.json(ticketState.map(row => ({ expires_at: row.expires_at })));
+    }
+    if (target.startsWith(`${env.SUPABASE_URL}/rest/v1/support_tickets`)) {
+      tickets.push(JSON.parse(options.body));
+      return Response.json({});
     }
     if (target.includes('api.telegram.org/bot')) {
       const method = target.split('/').at(-1);
@@ -221,7 +286,7 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
       assert.match(animation.payload.animation, /assets\/branding\/welcome\.mp4$/, 'MP4 must be preferred');
       assert.match(animation.payload.caption, /все скидочные карты в одном месте/);
       assert.ok(animation.payload.caption.length <= 1024, 'caption must fit under the animation');
-      assert.deepEqual(animation.payload.reply_markup.inline_keyboard.map(row => row.length), [1, 1, 2, 2]);
+      assert.deepEqual(animation.payload.reply_markup.inline_keyboard.map(row => row.length), [1, 1, 2, 2, 1]);
     });
 
     await check('the welcome grid carries working launch buttons', async () => {
@@ -230,7 +295,7 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
       const welcome = calls.find(item => item.method === 'sendMessage');
       assert.match(welcome.payload.text, /все скидочные карты в одном месте/);
       const rows = welcome.payload.reply_markup.inline_keyboard;
-      assert.deepEqual(rows.map(row => row.length), [1, 1, 2, 2]);
+      assert.deepEqual(rows.map(row => row.length), [1, 1, 2, 2, 1]);
       assert.equal(new URL(rows[0][0].web_app.url).searchParams.get('startapp'), 'add');
       assert.equal(rows[1][0].web_app.url, env.TELEGRAM_WEB_APP_URL);
     });
@@ -327,7 +392,7 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
       assert.equal((await dispatch(message('/menu'))).status, 200);
       const sent = calls.find(item => item.method === 'sendMessage');
       assert.match(sent.payload.text, /все скидочные карты в одном месте/);
-      assert.deepEqual(sent.payload.reply_markup.inline_keyboard.map(row => row.length), [1, 1, 2, 2]);
+      assert.deepEqual(sent.payload.reply_markup.inline_keyboard.map(row => row.length), [1, 1, 2, 2, 1]);
     });
 
     await check('a quick deep link opens the wallet without the presentation', async () => {
@@ -432,6 +497,58 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
       for (const action of ['brand', 'diagnose']) {
         assert.equal((await dispatch({ action }, 'incorrect')).status, 401, action);
       }
+    });
+
+    await check('обращение создаётся только после явного входа в режим', async () => {
+      reset(); tickets.length = 0; ticketState = [];
+      // Обычный текст без входа в режим обращением не становится.
+      await dispatch(message('просто сообщение'));
+      assert.equal(tickets.length, 0, 'случайный текст не должен становиться обращением');
+      assert.ok(calls.find(item => item.method === 'sendMessage' && /Не понял команду/.test(item.payload.text)));
+
+      // Вход в режим и отправка обращения.
+      reset();
+      await dispatch(press('kartochka:ticket'));
+      assert.equal(ticketState.length, 1, 'режим ожидания обязан включиться');
+      await dispatch(message('не открывается карта Пятёрочки'));
+      assert.equal(tickets.length, 1, 'обращение обязано создаться');
+      assert.equal(tickets[0].message, 'не открывается карта Пятёрочки');
+      assert.equal(tickets[0].status, 'open');
+      assert.ok(tickets[0].ticket_no, 'обращению обязан присваиваться номер');
+      const confirmation = calls.filter(item => item.method === 'sendMessage').pop();
+      assert.match(confirmation.payload.text, /Обращение №/);
+      assert.match(confirmation.payload.text, new RegExp(tickets[0].ticket_no));
+      assert.equal(ticketState.length, 0, 'режим обязан сбрасываться после отправки');
+    });
+
+    await check('отмена выводит из режима, и следующий текст не станет обращением', async () => {
+      reset(); tickets.length = 0; ticketState = [];
+      await dispatch(press('kartochka:ticket'));
+      assert.equal(ticketState.length, 1);
+      // «Отменить» ведёт на экран поддержки — это и есть выход из режима.
+      await dispatch(press('kartochka:help'));
+      assert.equal(ticketState.length, 0, 'отмена обязана сбросить режим');
+      await dispatch(message('случайное сообщение после отмены'));
+      assert.equal(tickets.length, 0, 'после отмены текст не должен становиться обращением');
+    });
+
+    await check('команда во время режима не превращается в обращение', async () => {
+      reset(); tickets.length = 0; ticketState = [];
+      await dispatch(press('kartochka:ticket'));
+      await dispatch(message('/menu'));
+      assert.equal(tickets.length, 0, 'команда не должна становиться обращением');
+      assert.equal(ticketState.length, 0, 'команда обязана выводить из режима');
+    });
+
+    await check('/info открывает документы и поддержку без оплаты', async () => {
+      reset();
+      assert.equal((await dispatch(message('/info'))).status, 200);
+      const sent = calls.find(item => item.method === 'sendMessage');
+      assert.match(sent.payload.text, /Информация/);
+      assert.match(sent.payload.text, /Код проверки: pay/);
+      const buttons = sent.payload.reply_markup.inline_keyboard.flat();
+      assert.ok(buttons.some(b => /terms\.html$/.test(b.url || '')));
+      assert.ok(buttons.some(b => /privacy\.html$/.test(b.url || '')));
     });
 
     await check('payments stay switched off', async () => {

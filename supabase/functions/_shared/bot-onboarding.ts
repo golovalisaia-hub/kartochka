@@ -5,6 +5,8 @@
 //
 // Telegram caps a photo caption at 1024 characters. Every page below is written to fit, so
 // any screen can be shown as a caption under the welcome picture without being truncated.
+import { PLAN, priceIsPublished, priceLabel, accessModelLabel } from '../../../pricing.js';
+
 const prefix = 'kartochka:';
 
 /*
@@ -24,12 +26,15 @@ export const BOT_DESCRIPTION =
 export const BOT_COMMANDS = [
   { command: 'start', description: 'Знакомство с Карточкой' },
   { command: 'menu', description: 'Главное меню' },
-  { command: 'quick', description: 'Быстрый доступ' }
+  { command: 'quick', description: 'Быстрый доступ' },
+  // Документы и поддержка должны находиться с первой попытки, в том числе из меню команд.
+  { command: 'info', description: 'Тариф, документы и поддержка' }
 ];
 
 // `plans` is kept as an alias of `premium`: messages already sitting in users' chats carry
 // the old callback_data, and those buttons must keep working rather than silently failing.
-const PAGES = ['home', 'features', 'quick', 'backtap', 'action', 'android', 'premium', 'plans', 'support'];
+const PAGES = ['home', 'features', 'quick', 'backtap', 'action', 'android', 'premium', 'plans',
+               'support', 'info', 'tariff', 'help', 'ticket'];
 // Страницы, которых больше нет в интерфейсе. Их callback_data приходит из сообщений,
 // отправленных до изменения: нажатие обязано открыть главный экран, а не повиснуть.
 const RETIRED_PAGES = new Set(['support', 'plans']);
@@ -49,6 +54,10 @@ const SUPPORT_LINK = /^https:\/\/(t\.me|telegram\.me)\/[a-zA-Z0-9_]{5,32}(?:\?.*
 
 // The Mini App reads `startapp` from its own URL, so a Web App button can ask for a screen.
 // It selects a screen only — authentication is unchanged and happens inside the app.
+function legalUrl(appUrl, file) {
+  try { return new URL(file, appUrl).href; } catch (_) { return ''; }
+}
+
 function withRoute(appUrl, route) {
   try {
     const url = new URL(appUrl);
@@ -58,7 +67,7 @@ function withRoute(appUrl, route) {
 }
 
 export function onboardingPage(page, {
-  appUrl = '', quickUrl = '', supportUrl = '', available = false
+  appUrl = '', quickUrl = '', supportUrl = '', available = false, reviewMode = false
 } = {}) {
   // A launch button is only ever offered once the URL has been proven to serve the app.
   // A button that opens somebody's login page is worse than no button at all.
@@ -78,6 +87,9 @@ export function onboardingPage(page, {
   // Снятые разделы ведут на главный экран.
   if (RETIRED_PAGES.has(page) && page === 'support') page = 'home';
   const toMenu = callback('⌂ Главное меню', 'home');
+  const toInfo = callback('⬅️ Назад', 'info');
+  const terms = legalUrl(appUrl, 'terms.html');
+  const privacy = legalUrl(appUrl, 'privacy.html');
   const toQuick = callback('← Быстрый доступ', 'quick');
 
   switch (page) {
@@ -105,7 +117,9 @@ export function onboardingPage(page, {
               callback('⭐ Premium — скоро', 'premium'),
               // Недавние карты открываются сразу, без промежуточного экрана.
               ...(quickButton.length ? [{ text: '⚡ Недавние карты', url: quickUrl }] : [callback('⚡ Недавние карты', 'quick')])
-            ]
+            ],
+            // Документы и поддержка доступны всегда, с первого экрана и без оплаты.
+            [callback('ℹ️ Информация', 'info')]
           ]
         }
       };
@@ -159,6 +173,74 @@ export function onboardingPage(page, {
         reply_markup: { inline_keyboard: [...(quickButton.length ? [quickButton] : []), [toQuick, toMenu]] }
       };
 
+    /*
+     * Раздел «Информация». Четыре требования банка вынесены отдельными кнопками:
+     * тариф, соглашение, политика и поддержка. Объединять документы в одну кнопку нельзя —
+     * проверяющий должен видеть каждый пункт сразу.
+     *
+     * Раздел доступен всем и никогда не закрывается оплатой: новому пользователю,
+     * пользователю без доступа и до совершения платежа.
+     */
+    case 'info': {
+      const rows = [
+        [callback('💳 Тариф и оплата', 'tariff')],
+        terms ? [{ text: '📄 Пользовательское соглашение', url: terms }] : [],
+        privacy ? [{ text: '🔒 Политика конфиденциальности', url: privacy }] : [],
+        [callback('🆘 Поддержка', 'help')],
+        [callback('⬅️ Назад', 'home')]
+      ].filter(row => row.length);
+      return {
+        text: 'ℹ️ Информация\n\n'
+          + 'Здесь находятся сведения о сервисе, оплате, юридические документы и связь с поддержкой.'
+          + (terms && privacy ? '' : '\n\n⚠️ Документы станут доступны после публикации приложения.')
+          + (reviewMode ? '\n\nКод проверки: pay' : ''),
+        reply_markup: { inline_keyboard: rows }
+      };
+    }
+
+    case 'tariff':
+      return {
+        text: '💳 Тариф и оплата\n\n'
+          + `Тариф: ${PLAN.name}\n`
+          + `Стоимость: ${priceLabel()}\n`
+          + `Условие: ${accessModelLabel()}\n\n`
+          + 'Что входит в платный доступ:\n'
+          + 'Возможность использовать доступные в сервисе карты лояльности, владельцы которых '
+          + 'добровольно разрешили их использование другими пользователями.\n\n'
+          + 'Важно:\n'
+          + '• вы не становитесь владельцем такой карты;\n'
+          + '• владелец разрешает использование сам и может отозвать разрешение;\n'
+          + '• наличие карты конкретного магазина не гарантируется;\n'
+          + '• правила программы лояльности магазина соблюдает сам пользователь.\n\n'
+          + 'Бесплатно и без оплаты: свои карты, добавление по фото и вручную, поиск, '
+          + 'штрихкоды, недавние карты и синхронизация.\n\n'
+          + (priceIsPublished()
+              ? 'Стоимость указана до оплаты и не меняется на странице платёжной системы.'
+              : 'Приём платежей пока не подключён: платный доступ не продаётся и деньги не списываются.'),
+        reply_markup: { inline_keyboard: [[toInfo]] }
+      };
+
+    case 'help':
+      return {
+        text: '🆘 Поддержка\n\n'
+          + 'Опишите проблему одним сообщением — мы создадим обращение с номером.\n\n'
+          + 'Не отправляйте пароли, коды из писем и полные номера карт: для помощи они не нужны.',
+        reply_markup: {
+          inline_keyboard: [
+            [callback('✍️ Написать обращение', 'ticket')],
+            [toInfo]
+          ]
+        }
+      };
+
+    case 'ticket':
+      return {
+        text: '✍️ Новое обращение\n\n'
+          + 'Отправьте следующим сообщением описание проблемы. Мы присвоим обращению номер.\n\n'
+          + 'Чтобы выйти, нажмите «Отменить» — следующее сообщение тогда не станет обращением.',
+        reply_markup: { inline_keyboard: [[callback('❌ Отменить', 'help')]] }
+      };
+
     case 'premium':
     case 'plans':
       return {
@@ -174,6 +256,6 @@ export function onboardingPage(page, {
 
 
     default:
-      return onboardingPage('home', { appUrl, quickUrl, supportUrl, available });
+      return onboardingPage('home', { appUrl, quickUrl, supportUrl, available, reviewMode });
   }
 }
