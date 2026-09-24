@@ -5,7 +5,7 @@
 //
 // Telegram caps a photo caption at 1024 characters. Every page below is written to fit, so
 // any screen can be shown as a caption under the welcome picture without being truncated.
-import { PLAN, priceIsPublished, priceLabel, accessModelLabel } from './pricing.ts';
+import { PLAN, PAYMENTS_ENABLED, priceLabel, accessModelLabel } from './pricing.ts';
 
 const prefix = 'kartochka:';
 
@@ -214,9 +214,10 @@ export function onboardingPage(page, {
           + '• правила программы лояльности магазина соблюдает сам пользователь.\n\n'
           + 'Бесплатно и без оплаты: свои карты, добавление по фото и вручную, поиск, '
           + 'штрихкоды, недавние карты и синхронизация.\n\n'
-          + (priceIsPublished()
+          + (PAYMENTS_ENABLED
               ? 'Стоимость указана до оплаты и не меняется на странице платёжной системы.'
-              : 'Приём платежей пока не подключён: платный доступ не продаётся и деньги не списываются.'),
+              : 'Приём платежей пока не подключён: оплатить доступ сейчас нельзя, '
+                + 'деньги не списываются. Стоимость указана заранее и на странице оплаты не изменится.'),
         reply_markup: { inline_keyboard: [[toInfo]] }
       };
 

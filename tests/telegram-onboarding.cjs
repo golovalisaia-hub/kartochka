@@ -153,9 +153,16 @@ const file = path.join(root, 'supabase/functions/_shared/bot-onboarding.ts');
   assert.match(tariff.text, /Тариф и оплата/);
   assert.match(tariff.text, /без автоматического продления/);
   assert.doesNotMatch(tariff.text, /подписк/i, 'без автопродления это не подписка');
-  // Цена не определена владельцем — выдумывать сумму нельзя.
-  assert.match(tariff.text, /Стоимость уточняется/);
-  assert.doesNotMatch(tariff.text, /\d+\s*₽/, 'выдуманная сумма недопустима');
+  // Цена назначена владельцем и берётся из единственного источника, а не вписана в текст.
+  const { PLAN: TARIFF_PLAN, priceLabel: tariffPriceLabel } =
+    await import(pathToFileURL(path.join(root, 'pricing.js')).href);
+  assert.match(tariff.text, new RegExp(`Стоимость: ${tariffPriceLabel()}`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+    'экран обязан показывать сумму из pricing.js');
+  assert.match(tariff.text, new RegExp(`${TARIFF_PLAN.amount}\\s*₽`), 'сумма не показана');
+  // Пока приём платежей выключен, экран обязан честно об этом сказать: цена есть, оплаты нет.
+  assert.match(tariff.text, /Приём платежей пока не подключён/,
+    'назначенная цена не должна выдавать выключенную оплату за работающую');
+  assert.match(tariff.text, /деньги не списываются/);
   // Комиссии платёжного провайдера пользователю не показываются.
   assert.doesNotMatch(tariff.text, /9\s*%|8\s*%|5\s*%|эквайринг|СБП|крипт/i);
   // Платный доступ описан точно, без запрещённых формулировок.

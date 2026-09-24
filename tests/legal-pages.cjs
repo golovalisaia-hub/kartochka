@@ -99,6 +99,7 @@ const TODAY = '24 сентября 2026';
     const rootPricing = await import(pathToFileURL(path.join(root, 'pricing.js')).href);
     const botPricing = await import(pathToFileURL(path.join(root, 'supabase/functions/_shared/pricing.ts')).href);
     assert.equal(botPricing.ACCESS_MODEL, rootPricing.ACCESS_MODEL, 'модель доступа разошлась');
+    assert.equal(botPricing.PAYMENTS_ENABLED, rootPricing.PAYMENTS_ENABLED, 'флаг приёма платежей разошёлся');
     assert.deepEqual(botPricing.PLAN, rootPricing.PLAN, 'параметры тарифа разошлись');
     assert.equal(botPricing.priceLabel(), rootPricing.priceLabel(), 'строка стоимости разошлась');
     assert.equal(botPricing.accessModelLabel(), rootPricing.accessModelLabel(), 'описание модели разошлось');
@@ -106,9 +107,17 @@ const TODAY = '24 сентября 2026';
 
   await check('цена берётся из единственного источника и не выдумана', async () => {
     const pricing = await import(pathToFileURL(path.join(root, 'pricing.js')).href);
-    // Пока владелец не назначил сумму, публиковать число нельзя.
-    assert.equal(pricing.priceIsPublished(), false);
-    assert.equal(pricing.priceLabel(), 'Стоимость уточняется');
+    // Сумма назначена владельцем: она должна быть положительным числом, а не строкой из текста.
+    assert.equal(pricing.priceIsPublished(), true, 'цена не опубликована');
+    assert.ok(Number.isInteger(pricing.PLAN.amount) && pricing.PLAN.amount > 0,
+      'цена обязана быть положительным целым числом рублей');
+    assert.equal(pricing.PLAN.currency, 'RUB');
+    assert.match(pricing.priceLabel(), new RegExp(`^${pricing.PLAN.amount} ₽ `),
+      'строка стоимости обязана начинаться с назначенной суммы');
+    assert.notEqual(pricing.priceLabel(), 'Стоимость уточняется');
+    // Цена и доступность оплаты — разные факты: пока приём платежей выключен, сумма его не включает.
+    assert.equal(pricing.PAYMENTS_ENABLED, false,
+      'приём платежей включается только вместе с настоящей оплатой');
     // Модель установлена по коду: автопродления в проекте нет.
     assert.equal(pricing.PLAN.autoRenew, false);
     assert.match(pricing.accessModelLabel(), /без автоматического продления/);
