@@ -5,7 +5,7 @@
 //
 // Telegram caps a photo caption at 1024 characters. Every page below is written to fit, so
 // any screen can be shown as a caption under the welcome picture without being truncated.
-import { PLAN, priceIsPublished, priceLabel, accessModelLabel } from '../../../pricing.js';
+import { PLAN, priceIsPublished, priceLabel, accessModelLabel } from './pricing.ts';
 
 const prefix = 'kartochka:';
 

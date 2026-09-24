@@ -93,6 +93,17 @@ const TODAY = '24 сентября 2026';
     assert.match(privacyText, /не передаются ни при каких условиях/);
   });
 
+  await check('копия тарифа для бота не разошлась с корневой', async () => {
+    // Бот не может импортировать файл из корня: Supabase бандлит только каталог функций.
+    // Поэтому копия внутри каталога сверяется здесь — иначе цена разойдётся незаметно.
+    const rootPricing = await import(pathToFileURL(path.join(root, 'pricing.js')).href);
+    const botPricing = await import(pathToFileURL(path.join(root, 'supabase/functions/_shared/pricing.ts')).href);
+    assert.equal(botPricing.ACCESS_MODEL, rootPricing.ACCESS_MODEL, 'модель доступа разошлась');
+    assert.deepEqual(botPricing.PLAN, rootPricing.PLAN, 'параметры тарифа разошлись');
+    assert.equal(botPricing.priceLabel(), rootPricing.priceLabel(), 'строка стоимости разошлась');
+    assert.equal(botPricing.accessModelLabel(), rootPricing.accessModelLabel(), 'описание модели разошлось');
+  });
+
   await check('цена берётся из единственного источника и не выдумана', async () => {
     const pricing = await import(pathToFileURL(path.join(root, 'pricing.js')).href);
     // Пока владелец не назначил сумму, публиковать число нельзя.
