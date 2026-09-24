@@ -109,6 +109,9 @@ function signedInitData(token, user, authDate) {
   assert.match(cloud, /result\?\.access_token\s*\?\s*result/);
   assert.match(cloud, /result\?\.token_hash/);
   const telegramFunction = read('supabase/functions/telegram/index.ts');
+  // GoTrue/bcrypt rejects passwords longer than 72 bytes. Two hyphenless UUIDs are 64 bytes.
+  assert.match(telegramFunction, /crypto\.randomUUID\(\)\.replaceAll\('-',\s*''\)\+crypto\.randomUUID\(\)\.replaceAll\('-',\s*''\)/);
+  assert.doesNotMatch(telegramFunction, /crypto\.randomUUID\(\)\+'-'\+crypto\.randomUUID\(\)/);
   assert.match(telegramFunction, /\/auth\/v1\/admin\/generate_link/);
   // Raw GoTrue REST returns hashed_token at the top level; supabase-js wraps it in properties.
   assert.match(telegramFunction, /l\.hashed_token\|\|l\.properties\?\.hashed_token/);
