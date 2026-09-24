@@ -1,4 +1,4 @@
-const CACHE = 'kartochka-v12';
+const CACHE = 'kartochka-v16-legal';
 const APP_SHELL = [
   './',
   './index.html',
@@ -11,6 +11,12 @@ const APP_SHELL = [
   './auth-delivery.js',
   './cloud.js',
   './cloud-atomic.js',
+  './cloud-community.js',
+  './pricing.js',
+  './terms.html',
+  './privacy.html',
+  './legal.css',
+  './telegram-mini-app.js',
   './config.js',
   './scanner-enhance.js',
   './store-directory.js',

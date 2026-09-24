@@ -1,6 +1,6 @@
 # Supabase Auth settings — verified 18 September 2026
 
-Project: `kartochka` (`cwiechastoocixpnobuy`). The public GitHub Pages client uses the publishable/anon key only; no service-role secret is exposed.
+Project: `kartochka-telegram` (`qtyqdlkmfojbebgxcqxl`). The public client uses the publishable/anon key only; no service-role secret is exposed.
 
 ## Verified configuration
 

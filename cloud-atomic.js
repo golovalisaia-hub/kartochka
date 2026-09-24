@@ -70,11 +70,49 @@
     const text = await response.text();
     return text ? JSON.parse(text) : null;
   }
-  const getRows = () => api('/rest/v1/cards?select=*&order=last_used.desc');
+  function telegramAccount() {
+    const user = legacy.user?.();
+    return Boolean(
+      window.KartochkaTelegram?.active?.() &&
+      user?.user_metadata?.telegram_id
+    );
+  }
+  const cardTable = () => telegramAccount() ? 'telegram_test_cards' : 'cards';
+  const mutationRpc = () => telegramAccount()
+    ? 'apply_telegram_test_card_change'
+    : 'apply_card_change';
+  const openRpc = () => telegramAccount()
+    ? 'record_telegram_test_card_opens'
+    : 'record_card_opens';
+
+  /*
+   * Open history travels on its own path.
+   *
+   * The content hash below deliberately excludes open history and upsertCards skips a card
+   * whose content hash is unchanged — so without this call, opening a card on one device
+   * would never reach the others. This RPC only moves `last_opened_at` forward for rows the
+   * caller owns and never touches `revision`, so an open cannot be mistaken for an edit and
+   * cannot collide with a rename happening on another device.
+   *
+   * Returns the ids the server actually stored; anything missing stays queued on the client.
+   */
+  async function recordOpens(opens) {
+    const entries = (Array.isArray(opens) ? opens : [])
+      .map(item => ({ id: String(item?.id || ''), at: Number(item?.at || 0) }))
+      .filter(item => item.id && Number.isFinite(item.at) && item.at > 0)
+      .slice(0, 200);
+    if (!entries.length) return [];
+    const applied = await api(`/rest/v1/rpc/${openRpc()}`, {
+      method: 'POST', body: JSON.stringify({ p_opens: entries })
+    });
+    return Array.isArray(applied) ? applied.map(String) : [];
+  }
+  const getRows = () => api(`/rest/v1/${cardTable()}?select=*&order=last_used.desc`);
   const cardFromRow = row => ({
     id: row.id, store: row.store, number: row.number,
     a: row.color_a, b: row.color_b, text: row.text_color || '#fff',
     lastUsed: Number(row.last_used || 0), format: row.format || 'code_128',
+    openedAt: Number(row.last_opened_at || 0),
     codeImage: row.code_image || null
   });
   function cardToPayload(card) {
@@ -84,6 +122,8 @@
       last_used: Number(card.lastUsed || Date.now()),
       format: card.format || 'code_128', code_image: card.codeImage || null
     };
+    // Note: open history is NOT part of this payload. It is written only by recordOpens, so
+    // an edit can never silently rewrite (or erase) when a card was last opened.
   }
   async function hash(card) {
     const value = JSON.stringify([
@@ -116,7 +156,7 @@
     return [...keys].every(id => a[id] === b[id]);
   }
   async function mutation(id, expected, remove, card = null) {
-    return api('/rest/v1/rpc/apply_card_change', {
+    return api(`/rest/v1/rpc/${mutationRpc()}`, {
       method: 'POST', body: JSON.stringify({
         p_card_id: id, p_expected_revision: expected,
         p_delete: remove, p_card: card ? cardToPayload(card) : null
@@ -129,6 +169,9 @@
       const previous = localStorage.getItem(OWNER_KEY);
       if (previous && previous !== uid && cards().length) {
         throw new Error('Карты принадлежат другому аккаунту. Сохраните резервную копию перед сменой аккаунта.');
+      }
+      if (telegramAccount() && !previous && cards().length) {
+        throw new Error('Найдены локальные карты без владельца. Сохраните резервную копию и очистите их перед Telegram-тестом.');
       }
       const serverRows = await getRows();
       const server = rowsById(serverRows);
@@ -159,15 +202,17 @@
         const remoteCard = cardFromRow(row);
         if (!localCard) { merged.push(remoteCard); continue; }
         const latest = Math.max(remoteCard.lastUsed, Number(localCard.lastUsed || 0));
+        // Open history merges as a maximum, independently of which side won the content.
+        const opened = Math.max(Number(remoteCard.openedAt || 0), Number(localCard.openedAt || 0));
         if (localHashes[id] === remoteHashes[id]) {
-          merged.push({ ...remoteCard, lastUsed: latest });
+          merged.push({ ...remoteCard, lastUsed: latest, openedAt: opened });
           continue;
         }
         if (!baseline[id]) throw new Error(conflict);
         const localEdited = baseline[id] !== localHashes[id];
         const remoteEdited = baseline[id] !== remoteHashes[id];
         if (localEdited && remoteEdited) throw new Error(conflict);
-        merged.push({ ...(localEdited ? localCard : remoteCard), lastUsed: latest });
+        merged.push({ ...(localEdited ? localCard : remoteCard), lastUsed: latest, openedAt: opened });
       }
       observed = { uid, revisions: revisions(serverRows) };
       return merged;
@@ -235,5 +280,5 @@
       }
     } catch (error) { markPending(uid); throw error; }
   }
-  window.KartochkaCloud = { ...legacy, listCards, upsertCards, deleteCard };
+  window.KartochkaCloud = { ...legacy, listCards, upsertCards, deleteCard, recordOpens };
 })();

@@ -157,6 +157,27 @@
     lastObserved = null;
     return session.user;
   }
+  async function loginWithTelegram(initData) {
+    if (typeof initData !== 'string' || !initData) throw new Error('Telegram не передал данные авторизации.');
+    const result = await request('/functions/v1/telegram', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'login', initData })
+    });
+    // Accept both response shapes so frontend and Edge Function can be rolled out safely.
+    let session = result?.access_token ? result : null;
+    if (!session && result?.token_hash) {
+      session = await request('/auth/v1/verify', {
+        method: 'POST',
+        body: JSON.stringify({ token_hash: result.token_hash, type: result.type || 'magiclink' })
+      });
+    }
+    if (!session?.access_token || !session?.user?.id) {
+      throw new Error('Telegram-вход не подтверждён сервером.');
+    }
+    storeSession(session);
+    lastObserved = null;
+    return session.user;
+  }
   async function signOut() {
     const session = readSession();
     if (session?.user?.id && !cacheCards(session.user.id)) {
@@ -178,12 +199,14 @@
       color_a: card.a, color_b: card.b, text_color: card.text || '#fff',
       last_used: Number(card.lastUsed || Date.now()), format: card.format || 'code_128',
       code_image: card.codeImage || null, updated_at: new Date().toISOString()
+      // last_opened_at is intentionally absent: only recordOpens writes open history.
     };
   }
   function fromRow(row) {
     return {
       id: row.id, store: row.store, number: row.number, a: row.color_a, b: row.color_b,
       text: row.text_color || '#fff', lastUsed: Number(row.last_used || 0),
+      openedAt: Number(row.last_opened_at || 0),
       format: row.format || 'code_128', codeImage: row.code_image || null
     };
   }
@@ -241,7 +264,11 @@
         }
         if (!onDevice) { result.push(onServer); continue; }
         if (remoteHashes[id] === localHashes[id]) {
-          result.push({ ...onServer, lastUsed: Math.max(onServer.lastUsed, onDevice.lastUsed) });
+          result.push({
+            ...onServer,
+            lastUsed: Math.max(onServer.lastUsed, onDevice.lastUsed),
+            openedAt: Math.max(Number(onServer.openedAt || 0), Number(onDevice.openedAt || 0))
+          });
           continue;
         }
         if (!base[id]) throw new Error(conflictMessage);
@@ -249,7 +276,11 @@
         const remoteEdited = remoteHashes[id] !== base[id];
         if (localEdited && remoteEdited) throw new Error(conflictMessage);
         const winner = localEdited ? onDevice : onServer;
-        result.push({ ...winner, lastUsed: Math.max(onDevice.lastUsed, onServer.lastUsed) + 1 });
+        result.push({
+          ...winner,
+          lastUsed: Math.max(onDevice.lastUsed, onServer.lastUsed) + 1,
+          openedAt: Math.max(Number(onDevice.openedAt || 0), Number(onServer.openedAt || 0))
+        });
       }
       lastObserved = { userId, hashes: remoteHashes };
       return result;
@@ -315,7 +346,7 @@
   }
 
   window.KartochkaCloud = {
-    configured, user, validSession, sendCode, verifyCode, signOut,
+    configured, user, validSession, sendCode, verifyCode, loginWithTelegram, signOut,
     listCards, upsertCards, deleteCard
   };
 })();

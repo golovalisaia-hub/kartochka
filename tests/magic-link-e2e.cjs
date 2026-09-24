@@ -21,7 +21,7 @@ const server = http.createServer((req, res) => {
   const browser = await chromium.launch({ headless: true });
   try {
     const ctx = await browser.newContext({ serviceWorkers: 'block' });
-    await ctx.route('https://cwiechastoocixpnobuy.supabase.co/**', async route => {
+    await ctx.route('https://qtyqdlkmfojbebgxcqxl.supabase.co/**', async route => {
       const u = new URL(route.request().url());
       if (u.pathname === '/auth/v1/user') {
         assert.match(route.request().headers().authorization || '', /^Bearer test-access-token$/);

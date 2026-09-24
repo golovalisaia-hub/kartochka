@@ -23,7 +23,7 @@ function session(id, email, refresh = `test-refresh-${id}`) {
   return { access_token:`test-access-${id}`, refresh_token:refresh, expires_in:3600, expires_at:Math.floor(Date.now()/1000)+3600, user:{ id, email } };
 }
 async function attachMock(context) {
-  await context.route('https://cwiechastoocixpnobuy.supabase.co/**', async route => {
+  await context.route('https://qtyqdlkmfojbebgxcqxl.supabase.co/**', async route => {
     const req = route.request();
     const u = new URL(req.url());
     const body = req.postDataJSON?.() || {};

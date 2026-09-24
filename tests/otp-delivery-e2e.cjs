@@ -22,7 +22,7 @@ const server = http.createServer((req, res) => {
     const ctx = await browser.newContext({ serviceWorkers:'block' });
     let reject = false;
     let sent = 0;
-    await ctx.route('https://cwiechastoocixpnobuy.supabase.co/**', async route => {
+    await ctx.route('https://qtyqdlkmfojbebgxcqxl.supabase.co/**', async route => {
       const req = route.request();
       const target = new URL(req.url());
       if (target.pathname === '/auth/v1/otp') {

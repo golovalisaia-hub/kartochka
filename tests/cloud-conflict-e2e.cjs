@@ -38,7 +38,7 @@ const server = http.createServer((req, res) => {
       localStorage.setItem('kartochka.supabase-session.v1', JSON.stringify(session));
       localStorage.setItem('kartochka.cloud-user.v1', id);
     }, { id });
-    await context.route('https://cwiechastoocixpnobuy.supabase.co/**', async route => {
+    await context.route('https://qtyqdlkmfojbebgxcqxl.supabase.co/**', async route => {
       const req = route.request();
       const url = new URL(req.url());
       const reply = (value, status = 200) => route.fulfill({ status, contentType:'application/json', body:value == null ? '' : JSON.stringify(value) });

@@ -19,6 +19,7 @@
   <svg class="svg-sprite" aria-hidden="true">
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 7.8A2.8 2.8 0 0 1 6.8 5h10.7A2.5 2.5 0 0 1 20 7.5V19H6.8A2.8 2.8 0 1 0 0 4H20M15.8 15h.01"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9" r="2.4"/><path d="M15.8 14.6A4.6 4.6 0 0 1 21 19"/></symbol>
     <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="2"/><rect x="14" y="4" width="6" height="6" rx="2"/><rect x="4" y="14" width="6" height="6" rx="2"/><rect x="14" y="14" width="6" height="6" rx="2"/></symbol>
     <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="m12 3 1.25 4.1a5.7 5.7 0 0 0 3.65 3.65L21 12l-4.1 1.25a5.7 5.7 0 0 0-3.65 3.65L12 21l-1.25-4.1a5.7 5.7 0 0 0-3.65-3.65L3 12l4.1-1.25a5.7 5.7 0 0 0 3.65-3.65L12 3Z"/></symbol>
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></symbol>
@@ -35,6 +36,32 @@
   </svg>
 
   <div class="app-shell">
+    <!-- Neutral boot gate: shown until a server-verified session exists inside Telegram, so a
+         second Telegram account can never see the previous account's cards, not even for a frame. -->
+    <div class="privacy-gate" id="privacyGate" hidden>
+      <div class="privacy-gate-mark">К</div>
+      <p class="privacy-gate-text" id="privacyGateText">Проверяем вход…</p>
+      <button class="secondary-button privacy-gate-retry" id="privacyGateRetry" type="button" hidden>Повторить вход</button>
+    </div>
+
+    <!-- Compact quick-access screen. Rendered instead of the wallet when the Mini App was
+         launched with startapp=quick. It is a separate screen, not a shrunken wallet. -->
+    <section class="quick-screen" id="quickScreen" hidden aria-labelledby="quickTitle">
+      <div class="quick-head">
+        <span class="brand-mark quick-mark">К</span>
+        <div>
+          <h1 class="quick-title" id="quickTitle">Карточка</h1>
+          <p class="quick-subtitle">Недавно открытые</p>
+        </div>
+      </div>
+      <div class="quick-list" id="quickList" role="list"></div>
+      <div class="quick-empty" id="quickEmpty" hidden>
+        <strong id="quickEmptyTitle">Пока нет открытых карт</strong>
+        <span id="quickEmptyText">Выберите карту из списка — она появится здесь первой.</span>
+      </div>
+      <button class="primary-button quick-all" id="quickAllCards" type="button">Все карты</button>
+    </section>
+
     <header class="topbar">
       <div class="brand"><span class="brand-mark">К</span><span>Карточка</span></div>
       <div class="topbar-actions">
@@ -71,6 +98,7 @@
           <button class="secondary-button" id="showAllHome"><svg><use href="#i-grid"/></svg><span id="showAllLabel">Все карты</span></button>
         </div>
         <button class="privacy-note sync-note" id="syncStatus" type="button"><svg><use href="#i-cloud"/></svg><span>Карты хранятся только на этом устройстве</span></button>
+        <button class="text-button quick-access-entry" id="openQuickAccess" type="button">Быстрый доступ с телефона →</button>
       </section>
 
       <section class="view" id="allView" aria-labelledby="allTitle">
@@ -93,12 +121,88 @@
         <div class="theme-preview"><div class="mini-wallet"><span>К</span><small>КАРТОЧКА</small></div></div>
         <div class="theme-list" id="themeList"></div>
       </section>
+
+      <section class="view" id="quickAccessView" aria-labelledby="quickAccessTitle">
+        <div class="subpage-head">
+          <button class="icon-button back-button" data-go="wallet" aria-label="Назад"><svg><use href="#i-back"/></svg></button>
+          <div><p class="eyebrow">Быстрый доступ</p><h1 id="quickAccessTitle">Карта за одно нажатие</h1></div>
+          <span class="head-spacer"></span>
+        </div>
+        <p class="quick-access-lead">Эта ссылка открывает «Карточку» сразу на экране недавно открытых карт. Назначьте её на жест телефона — и до штрихкода останется одно нажатие.</p>
+        <div class="quick-access-link">
+          <code id="quickAccessUrl">https://t.me/KartochkaWalletBot?startapp=quick&amp;mode=compact</code>
+          <button class="secondary-button" id="copyQuickLink" type="button">Скопировать ссылку</button>
+        </div>
+        <button class="secondary-button wide" id="testQuickLink" type="button">Проверить ссылку</button>
+        <p class="quick-access-note" id="quickLinkStatus" hidden></p>
+
+        <details class="quick-guide" id="guideIphoneBackTap">
+          <summary>iPhone · двойное касание задней панели</summary>
+          <ol>
+            <li>Откройте приложение «Команды» → «+» → «Добавить действие».</li>
+            <li>Найдите действие «Открыть URL» и вставьте скопированную ссылку.</li>
+            <li>Назовите команду «Карточка» и сохраните её.</li>
+            <li>Настройки → Универсальный доступ → Касание → Касание задней панели → Двойное касание → выберите «Карточка».</li>
+          </ol>
+          <p class="quick-access-note">Названия пунктов отличаются в разных версиях iOS. iOS может показать подтверждение открытия ссылки — это отдельный шаг, обойти его нельзя. Запуск с заблокированного экрана не гарантирован.</p>
+        </details>
+
+        <details class="quick-guide" id="guideIphoneAction">
+          <summary>iPhone · кнопка «Действие»</summary>
+          <ol>
+            <li>Создайте ту же команду «Карточка», как описано выше.</li>
+            <li>Настройки → Кнопка «Действие» → пролистайте до «Быстрая команда».</li>
+            <li>Нажмите «Выбрать» и укажите команду «Карточка».</li>
+          </ol>
+          <p class="quick-access-note">Кнопка «Действие» есть не на всех моделях. Двойное нажатие обычной боковой кнопки переназначить на Mini App нельзя.</p>
+        </details>
+
+        <details class="quick-guide" id="guideAndroid">
+          <summary>Android · жесты и ярлык</summary>
+          <ol>
+            <li>Универсальный способ: откройте ссылку в браузере и выберите «Добавить на главный экран» — получится ярлык в одно нажатие.</li>
+            <li>Pixel: Настройки → Система → Жесты → Quick Tap. Если в списке только приложения, выберите Telegram и откройте «Карточку» из чата.</li>
+            <li>Samsung: Настройки → Дополнительные функции → Боковая кнопка → Двойное нажатие. Доступен запуск приложения или команды Bixby.</li>
+          </ol>
+          <p class="quick-access-note">Системные жесты Android часто умеют запускать только приложение, а не конкретную ссылку. Если ваш телефон открывает просто Telegram — используйте ярлык на главном экране, он проверенно работает.</p>
+        </details>
+      </section>
+
+      <section class="view" id="communityView" aria-labelledby="communityTitle">
+        <div class="subpage-head">
+          <button class="icon-button back-button" data-go="wallet" aria-label="Назад"><svg><use href="#i-back"/></svg></button>
+          <div><p class="eyebrow">Premium</p><h1 id="communityTitle">Карты сообщества</h1></div>
+          <span class="head-spacer"></span>
+        </div>
+
+        <!-- Состояние решает сервер. Клиент только показывает то, что ему ответили. -->
+        <div class="community-state" id="communityLocked" hidden>
+          <div class="community-mark"><svg><use href="#i-users"/></svg></div>
+          <h2>Карты сообщества</h2>
+          <p>Здесь будут доступны карты, которыми добровольно поделились другие участники.</p>
+          <span class="community-badge">Premium — скоро</span>
+          <p class="community-note">Основной кошелёк продолжает работать бесплатно.</p>
+        </div>
+
+        <div class="community-state" id="communityOff" hidden>
+          <div class="community-mark"><svg><use href="#i-users"/></svg></div>
+          <h2>Функция временно недоступна</h2>
+          <p>Раздел сообщества отключён. Ваши карты и кошелёк работают как обычно.</p>
+        </div>
+
+        <div id="communityStores" hidden>
+          <p class="community-lead">Выберите магазин. «Карточка» сама подберёт доступную карту — владелец остаётся анонимным.</p>
+          <div class="store-list" id="communityStoreList"></div>
+          <p class="community-note" id="communityEmpty" hidden>Сейчас нет доступных карт. Попробуйте позже.</p>
+        </div>
+      </section>
     </main>
 
     <nav class="bottom-nav" aria-label="Навигация">
       <button class="nav-item active" data-view="wallet"><svg><use href="#i-wallet"/></svg><span>Портмоне</span></button>
       <button class="nav-item" data-view="all"><svg><use href="#i-grid"/></svg><span>Все карты</span></button>
       <button class="nav-item" data-view="design"><svg><use href="#i-sparkle"/></svg><span>Дизайн</span></button>
+      <button class="nav-item" data-view="community"><svg><use href="#i-users"/></svg><span>Сообщество</span></button>
     </nav>
   </div>
 
@@ -158,6 +262,57 @@
       <div class="detail-card" id="detailCard"><span class="detail-logo" id="detailLogo">К</span><div><h2 id="detailStore">Карта</h2><p id="detailDigits">•••• 0000</p></div></div>
       <div class="barcode-panel" id="barcodePanel"><div id="barcodeMount"></div><p id="barcodeNumber"></p></div>
       <p class="code-tip" id="awakeStatus">Для быстрого сканирования экран остаётся светлым</p>
+
+      <div class="share-offer" id="shareOffer" hidden>
+        <div class="share-offer-head">
+          <strong>Получайте больше пользы от своей карты</strong>
+          <button class="share-help" id="shareHelp" type="button" aria-label="Что это значит">?</button>
+        </div>
+        <div class="share-offer-actions">
+          <button class="secondary-button" id="shareEnable" type="button">Поделиться картой</button>
+          <button class="text-button" id="shareDismiss" type="button">Не сейчас</button>
+        </div>
+      </div>
+
+      <div class="share-status" id="shareStatus" hidden>
+        <div class="share-status-head"><span class="share-dot"></span><strong>Общий доступ включён</strong></div>
+        <dl class="share-stats">
+          <div><dt>Показана сегодня</dt><dd id="shareToday">0</dd></div>
+          <div><dt>За 7 дней</dt><dd id="shareWeek">0</dd></div>
+          <div><dt>Всего показов</dt><dd id="shareTotal">0</dd></div>
+        </dl>
+        <p class="share-last" id="shareLast" hidden></p>
+        <button class="text-button share-off" id="shareDisable" type="button">Отключить общий доступ</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="overlay" id="shareConfirmOverlay" hidden>
+    <section class="sheet confirm-sheet" role="alertdialog" aria-modal="true" aria-labelledby="shareConfirmTitle">
+      <div class="sheet-grabber"></div>
+      <h2 id="shareConfirmTitle">Разрешить общий доступ к карте?</h2>
+      <ul class="share-terms">
+        <li>Карта сможет показываться другим участникам «Карточки».</li>
+        <li>Ваше имя и контакты не показываются никому.</li>
+        <li>Результат зависит от правил программы магазина.</li>
+        <li>Доступ можно отключить в любой момент.</li>
+      </ul>
+      <div class="confirm-actions">
+        <button class="secondary-button" id="shareCancel" type="button">Отмена</button>
+        <button class="primary-button" id="shareConfirm" type="button">Разрешить</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="overlay" id="shareHelpOverlay" hidden>
+    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="shareHelpTitle">
+      <div class="sheet-grabber"></div>
+      <div class="sheet-head"><div><p class="eyebrow">Общий доступ</p><h2 id="shareHelpTitle">Как это работает</h2></div><button class="icon-button close-sheet" data-close="shareHelp" aria-label="Закрыть"><svg><use href="#i-x"/></svg></button></div>
+      <p class="share-help-text">Вы можете добровольно разрешить другим участникам «Карточки» предъявлять вашу карту при покупках.</p>
+      <p class="share-help-text">Начисления и преимущества зависят от условий программы магазина и поступают на бонусный счёт, связанный с вашей картой.</p>
+      <p class="share-help-text">«Карточка» распределяет показы между владельцами максимально равномерно.</p>
+      <p class="share-help-text">Вы можете отключить общий доступ в любой момент.</p>
+      <button class="secondary-button wide" data-close="shareHelp" type="button">Понятно</button>
     </section>
   </div>
 
@@ -184,6 +339,11 @@
       <div id="authUnavailable" class="auth-message" hidden>
         <strong>Облако ещё не настроено</strong>
         <p>Укажите адрес проекта и публичный ключ Supabase в файле <code>config.js</code>.</p>
+      </div>
+
+      <div id="telegramAuthPanel" class="auth-message telegram-auth-panel" hidden>
+        <strong>Вход через Telegram</strong>
+        <p>Сеанс подтверждается подписью Telegram. Карты этого тестового аккаунта изолированы от других пользователей.</p>
       </div>
 
       <form id="emailForm" class="auth-form">
@@ -217,6 +377,8 @@
   <script src="local-recovery.js" defer></script>
   <script src="cloud.js" defer></script>
   <script src="cloud-atomic.js" defer></script>
+  <script src="cloud-community.js" defer></script>
+  <script src="telegram-mini-app.js" defer></script>
   <script src="scanner-enhance.js" defer></script>
   <script src="app.js" defer></script>
   <script src="store-directory.js" defer></script>

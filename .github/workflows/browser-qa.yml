@@ -1,7 +1,7 @@
 name: Card wallet browser QA
 on:
   push:
-    branches: [main, feature/email-password-cloud, fix/cloud-conflicts-and-status, fix/magic-link-fallback]
+    branches: [main, feature/email-password-cloud, fix/cloud-conflicts-and-status, fix/magic-link-fallback, fix/telegram-private-test]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -40,3 +40,56 @@ jobs:
         run: node tests/cloud-conflict-e2e.cjs
       - name: Atomic two-device revision and deletion regression
         run: node tests/atomic-sync.cjs
+      - name: Telegram authentication, privacy and payment shutdown
+        run: node tests/telegram-private-test.cjs
+      - name: Telegram Mini App browser flow
+        run: node tests/telegram-browser-e2e.cjs
+      - name: Telegram quick mode, open history and compact layout
+        run: node tests/telegram-quick-mode.cjs
+      - name: Telegram account isolation and cross-device open sync
+        run: node tests/telegram-account-privacy.cjs
+      - name: Bot branding script against a fake Bot API
+        run: node tests/telegram-apply-script.cjs
+      - name: Welcome animation integrity and real motion
+        run: node tests/branding-animation.cjs
+      - name: Telegram bot onboarding and navigation
+        run: node tests/telegram-onboarding.cjs
+      - name: Community tab, Premium gate and owner consent
+        run: node tests/community-ui.cjs
+      - name: Legal pages, pricing source and review code
+        run: node tests/legal-pages.cjs
+      - name: Deploy script confirmation, step order and failure stop
+        run: node tests/deploy-script.cjs
+
+  community-sql:
+    # Честность ротации, атомарность и RLS проверяются на настоящем PostgreSQL:
+    # на моках такие свойства подтвердить нельзя.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Community rules, fair rotation and RLS
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -c 'create database kartochka_cc'
+          psql -h localhost -U postgres -d kartochka_cc -v ON_ERROR_STOP=1 \
+               -f tests/sql/community-cards-check.sql
+      - name: Card open history rules
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -c 'create database kartochka_open'
+          psql -h localhost -U postgres -d kartochka_open -v ON_ERROR_STOP=1 \
+               -f tests/sql/open-history-check.sql
