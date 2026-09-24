@@ -10,6 +10,10 @@
 #   export TELEGRAM_WEBHOOK_SECRET='...'          # тот же, что в секретах проекта
 #   bash tools/deploy-telegram.sh
 #
+# Скрипт применяет миграции и спрашивает подтверждение перед изменением базы.
+# Неинтерактивный запуск (CI): ASSUME_YES=1. Пароль базы — SUPABASE_DB_PASSWORD,
+# иначе supabase спросит его сам.
+#
 # Секреты читаются только из переменных окружения и никогда не печатаются.
 set -uo pipefail
 
@@ -26,7 +30,38 @@ if [ -z "$REF" ]; then
   exit 2
 fi
 
-echo "1/4 Публикую функцию telegram…"
+echo "1/5 Применяю миграции базы…"
+# Миграции идут ПЕРЕД публикацией функции: код обращается к таблицам карт сообщества,
+# обращений и истории открытий. Опубликовать функцию раньше схемы значит выкатить бота,
+# который падает на первом же запросе.
+migrations_out="$($SUPA migration list --project-ref "$REF" 2>&1)"
+if [ $? -ne 0 ]; then
+  echo "  ! Не удалось получить список миграций." >&2
+  printf '    %s\n' "$migrations_out" | head -5 >&2
+  echo "    Обычно причина: не выполнен '$SUPA login' или неверный SUPABASE_PROJECT_REF." >&2
+  exit 1
+fi
+printf '%s\n' "$migrations_out"
+
+if [ "${ASSUME_YES:-}" != "1" ]; then
+  # Изменение схемы рабочей базы не должно происходить молча, даже если все миграции
+  # добавляющие: подтверждение стоит одной секунды, откат — несравнимо дороже.
+  printf 'Применить перечисленные миграции к проекту %s? [y/N] ' "$REF"
+  read -r answer </dev/tty || answer=""
+  case "$answer" in
+    [yY]|[yY][eE][sS]) ;;
+    *) echo "Отменено: база не изменена, функция не публиковалась." >&2; exit 3;;
+  esac
+fi
+
+if ! $SUPA db push --project-ref "$REF"; then
+  echo "Миграции не применены. Функцию не публикую: схема и код разошлись бы." >&2
+  echo "Если supabase просит пароль базы — задайте SUPABASE_DB_PASSWORD и запустите снова." >&2
+  exit 1
+fi
+
+echo
+echo "2/5 Публикую функцию telegram…"
 # _shared подтягивается автоматически: index.ts импортирует telegram.ts и bot-onboarding.ts.
 if ! $SUPA functions deploy telegram --project-ref "$REF"; then
   echo "Деплой не прошёл. Проверьте supabase login и права на проект." >&2
@@ -34,7 +69,7 @@ if ! $SUPA functions deploy telegram --project-ref "$REF"; then
 fi
 
 echo
-echo "2/4 Проверяю обязательные секреты проекта…"
+echo "3/5 Проверяю обязательные секреты проекта…"
 # Список запрашивается ОДИН раз, и сбой команды отличается от отсутствия секрета: иначе
 # неудачный login выглядел бы как «ни один секрет не задан», и вы бы задавали их заново.
 secrets_out="$($SUPA secrets list --project-ref "$REF" 2>&1)"
@@ -71,7 +106,7 @@ fi
 FN="https://${REF}.supabase.co/functions/v1/telegram"
 
 echo
-echo "3/4 Проверяю доступность приложения (diagnose)…"
+echo "4/5 Проверяю доступность приложения (diagnose)…"
 curl -sS --max-time 30 -X POST "$FN" \
   -H "X-Telegram-Bot-Api-Secret-Token: ${HOOK_SECRET}" \
   -H 'Content-Type: application/json' -d '{"action":"diagnose"}' \
@@ -84,7 +119,7 @@ curl -sS --max-time 30 -X POST "$FN" \
       }catch(_){console.log("  неожиданный ответ:",s.slice(0,300))}});'
 
 echo
-echo "4/4 Настраиваю бота (setup)…"
+echo "5/5 Настраиваю бота (setup)…"
 response="$(curl -sS --max-time 30 -X POST "$FN" \
   -H "X-Telegram-Bot-Api-Secret-Token: ${HOOK_SECRET}" \
   -H 'Content-Type: application/json' -d '{"action":"setup"}')"

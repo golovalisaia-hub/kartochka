@@ -58,6 +58,8 @@ jobs:
         run: node tests/community-ui.cjs
       - name: Legal pages, pricing source and review code
         run: node tests/legal-pages.cjs
+      - name: Deploy script confirmation, step order and failure stop
+        run: node tests/deploy-script.cjs
 
   community-sql:
     # Честность ротации, атомарность и RLS проверяются на настоящем PostgreSQL:
