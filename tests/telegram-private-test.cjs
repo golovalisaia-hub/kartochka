@@ -109,10 +109,11 @@ function signedInitData(token, user, authDate) {
   assert.match(cloud, /result\?\.access_token\s*\?\s*result/);
   assert.match(cloud, /result\?\.token_hash/);
   const telegramFunction = read('supabase/functions/telegram/index.ts');
-  // GoTrue/bcrypt rejects passwords longer than 72 bytes. Two hyphenless UUIDs are 64 bytes.
-  assert.match(telegramFunction, /crypto\.randomUUID\(\)\.replaceAll\('-',\s*''\)\+crypto\.randomUUID\(\)\.replaceAll\('-',\s*''\)/);
-  assert.doesNotMatch(telegramFunction, /crypto\.randomUUID\(\)\+'-'\+crypto\.randomUUID\(\)/);
+  // Let GoTrue's magic-link endpoint create new users and recover an existing orphaned Auth user.
+  assert.doesNotMatch(telegramFunction, /\/auth\/v1\/admin\/users'\s*,\s*\{method:'POST'/);
   assert.match(telegramFunction, /\/auth\/v1\/admin\/generate_link/);
+  assert.match(telegramFunction, /id=l\.id\|\|l\.user\?\.id/);
+  assert.match(telegramFunction, /if\(known&&known!==id\)throw Error\('Telegram account mismatch'\)/);
   // Raw GoTrue REST returns hashed_token at the top level; supabase-js wraps it in properties.
   assert.match(telegramFunction, /l\.hashed_token\|\|l\.properties\?\.hashed_token/);
   assert.doesNotMatch(telegramFunction, /\/auth\/v1\/token\?grant_type=password/);
